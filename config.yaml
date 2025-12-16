@@ -6,16 +6,21 @@ project:
 
 sources:
   allowed_domains:
-    -hhs.texas.gov
-    -yourtexasbenefits.com
+    - hhs.texas.gov
+    - yourtexasbenefits.com
 
   seed_urls:
+    - sources:
+  seed_urls:
     - https://www.hhs.texas.gov/services/food/snap-food-benefits
-    - https://www.yourtexasbenefits.com/Learn/Home
+    - https://www.yourtexasbenefits.com/
     - https://www.hhs.texas.gov/handbooks/texas-works-handbook
-    - https://www.hhs.texas.gov/services/food/snap-food-benefits/report-changes
-    - https://www.hhs.texas.gov/services/food/snap-food-benefits/how-apply
-
+    - https://www.hhs.texas.gov/handbooks/texas-works-handbook/e-2210-how-report-a-change
+    - https://www.hhs.texas.gov/handbooks/texas-works-handbook/b-620-reporting-requirements
+    - https://www.hhs.texas.gov/services/questions-about-your-benefits/benefits-application-next-steps
+    - https://www.hhs.texas.gov/regulations/forms/1000-1999/form-h1010-texas-works-application-assistance-your-texas-benefits
+    - https://www.hhs.texas.gov/regulations/forms/1000-1999/form-h1019-report-change
+    
   deny_patterns:
     - /es/
     - /providers/
