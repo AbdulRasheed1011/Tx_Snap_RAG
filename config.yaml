@@ -18,15 +18,15 @@ sources:
 
   deny_patterns:
     - /es/
-    -/providers/
-    -/news/
-    -/forms/search
+    - /providers/
+    - /news/
+    - /forms/search
 
 ingestion:
-  crawl_depth : 2
-  timeout_seconds : 15
-  max_pages : 200
-  user_agent : Tx-snap-RAG-bot/1.0
+  crawl_depth: 2
+  timeout_seconds: 15
+  max_pages: 200
+  user_agent: tx-snap-rag-bot/1.0
 
 chunking:
   meathod : heading
