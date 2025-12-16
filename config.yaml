@@ -1,7 +1,51 @@
 project:
-  name : Tx_snap_RAG
+  name : Tx-snap-RAG
   description : RAG system for Texas SNAP (HHSC)
   jurisdiction : Tx
   domani : SNAP
 
+sources:
+  allowed_domains:
+    -hhs.texas.gov
+    -yourtexasbenefits.com
+
+  seed_urls:
+    - https://www.hhs.texas.gov/services/food/snap-food-benefits
+    - https://www.yourtexasbenefits.com/Learn/Home
+    - https://www.hhs.texas.gov/handbooks/texas-works-handbook
+    - https://www.hhs.texas.gov/services/food/snap-food-benefits/report-changes
+    - https://www.hhs.texas.gov/services/food/snap-food-benefits/how-apply
+
+  deny_patterns:
+    - /es/
+    -/providers/
+    -/news/
+    -/forms/search
+
+ingestion:
+  crawl_depth : 2
+  timeout_seconds : 15
+  max_pages : 200
+  user_agent : Tx-snap-RAG-bot/1.0
+
+chunking:
+  meathod : heading
+  min_tokens : 200
+  max_tokens : 800
+  overlap_tokens : 100
+
+embedding:
+  provider : openai
+  model : text-embedding-3-large
+  batch_size : 64
+
+retrieval:
+  top_k : 8
+  min_score : 0.2
+  hybrid : true
+
+generation:
+  max_tokens : 512
+  temperature : 0.0
+  require_citations : true
   
