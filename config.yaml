@@ -10,8 +10,6 @@ sources:
     - yourtexasbenefits.com
 
   seed_urls:
-    - sources:
-  seed_urls:
     - https://www.hhs.texas.gov/services/food/snap-food-benefits
     - https://www.yourtexasbenefits.com/
     - https://www.hhs.texas.gov/handbooks/texas-works-handbook
@@ -20,7 +18,7 @@ sources:
     - https://www.hhs.texas.gov/services/questions-about-your-benefits/benefits-application-next-steps
     - https://www.hhs.texas.gov/regulations/forms/1000-1999/form-h1010-texas-works-application-assistance-your-texas-benefits
     - https://www.hhs.texas.gov/regulations/forms/1000-1999/form-h1019-report-change
-    
+
   deny_patterns:
     - /es/
     - /providers/
