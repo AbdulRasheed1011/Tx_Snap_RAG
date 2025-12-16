@@ -1,0 +1,7 @@
+project:
+  name : Tx_snap_RAG
+  description : RAG system for Texas SNAP (HHSC)
+  jurisdiction : Tx
+  domani : SNAP
+
+  
