@@ -65,6 +65,8 @@ class Ingestor:
 
         return {"legal": legal_urls, "illegal": illegal_urls}
     
-config = load_config('config.yaml')
+from src.utils.config import load_config
+
+config = load_config("config.yaml")
 ingestor = Ingestor(config)
 result = ingestor.fetch_and_save()
