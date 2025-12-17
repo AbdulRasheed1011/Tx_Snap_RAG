@@ -1,18 +1,11 @@
 from __future__ import annotations
-
 import os
 from pathlib import Path
 from typing import Iterable
-
 from bs4 import BeautifulSoup
 
 
 def parse_html_to_text(html_path: str | Path) -> str:
-    """Parse a single HTML file into cleaned, readable text.
-
-    - Removes common boilerplate tags (script/style/nav/header/footer).
-    - Preserves headings by uppercasing them and surrounding with blank lines.
-    """
 
     html_path = Path(html_path)
 
@@ -21,13 +14,11 @@ def parse_html_to_text(html_path: str | Path) -> str:
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # Remove noisy/irrelevant blocks
     for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
         tag.decompose()
 
     lines: list[str] = []
 
-    # Extract useful content in document order
     for element in soup.find_all(["h1", "h2", "h3", "p", "li"]):
         text = element.get_text(" ", strip=True)
         if not text:
@@ -38,7 +29,6 @@ def parse_html_to_text(html_path: str | Path) -> str:
         else:
             lines.append(text)
 
-    # Join and lightly normalize whitespace
     clean_text = "\n".join(lines)
     clean_text = "\n".join([ln.strip() for ln in clean_text.splitlines() if ln.strip()])
 
@@ -50,13 +40,6 @@ def clean_raw_html_dir(
     processed_dir: str | Path = "data/processed",
     glob_pattern: str = "*.html",
 ) -> dict:
-    """Clean all HTML files from raw_dir and save text outputs into processed_dir.
-
-    - Input:  data/raw/*.html
-    - Output: data/processed/<same_name>.txt
-
-    Returns a small summary dict for logging/prints.
-    """
 
     raw_dir = Path(raw_dir)
     processed_dir = Path(processed_dir)
@@ -98,8 +81,6 @@ def clean_raw_html_dir(
 
 
 if __name__ == "__main__":
-    # Run from project root:
-    #   python -m src.ingest.pages
     summary = clean_raw_html_dir()
     print("\nSummary:")
     print(f"  total: {summary['total']}")
