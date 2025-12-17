@@ -1,0 +1,33 @@
+FORM H1019, REPORT OF CHANGE
+INSTRUCTIONS FOR OPENING A FORM
+Some forms cannot be viewed in a web browser's PDF viewer and must be opened in the Adobe Reader application on your desktop system. Click here for instructions on opening this form.
+DOCUMENTS
+h1019.pdf
+h1019-S.pdf
+INSTRUCTIONS
+Updated: 4/2015
+PURPOSE
+To provide clients a form that lists their reporting requirements.
+To provide clients a form to report changes in their circumstances.
+To provide Texas Health and Human Services Commission (HHSC) office staff a form to record information reported by clients about changes in their circumstances.
+To advise the individual that the advisor can explain what type of proof is required for a reported change.
+To provide clients with a receipt of the change(s) they reported.
+PROCEDURE
+Clients complete this form when they want to report a change in their circumstances. HHSC office staff also complete the form when the individual reports a change in person or by telephone.
+The client or HHSC office staff complete an original and one copy of the form. Provide the individual with the copy if the person requests a receipt of the change.
+HHSC office staff give this form and a prepaid return envelope to all clients at the initial certification and each recertification, if needed. Staff must issue a new form and envelope to the client each time a change is reported.
+See retention requirements in the Texas Works Manager's Guide .
+DETAILED INSTRUCTIONS
+Provide Spanish-speaking households with Form H1019-S (Spanish version).
+Page 1 — Enter an X in the appropriate box next to each category. HHSC office staff must enter an X in only one box using the following guidelines:
+If the household receives ongoing Temporary Assistance for Needy Families (TANF), regardless of whether they receive Supplemental Nutrition Assistance Program (SNAP) food benefits, enter an X in the TANF category. This includes households receiving ongoing TANF and Medicaid or CHIP. Do not enter an X under the SNAP category.
+If the household receives ongoing Medicaid and/or CHIP, regardless of whether they receive SNAP food benefits, enter an X in the Medicaid/CHIP category. Do not enter an X under the SNAP category.
+If the household receives SNAP-Streamlined Reporting (SR) only, enter an X in the SR category. Enter the appropriate amounts of income.
+For all other SNAP cases, enter an X in the Non-Streamlined Reporting category.
+Note: If certifying an applicant for SNAP-SR and pending the household's application for TANF or Medicaid, enter an X in the SR category. If later certifying the TANF or Medicaid application, send the household a new Form H1019/H1019-S with an X in the appropriate category to inform them of their new reporting requirement. If denying a household's TANF or Medicaid case and the household continues receiving SNAP, issue a new Form H1019/H1019-S with an X in the appropriate category.
+Page 2 — Enter the case name, case number(s), advisor name and date in the top section.
+Changes — The client or staff enters an explanation of the changes with the effective date and the duration of each change.
+Signature — The person reporting the change signs the form and enters the date of the report in the appropriate spaces. If the change is reported by telephone, the person receiving the information signs the form and completes it in as much detail as possible.
+Voter Registration — Give form VR30, Texas Voter Registration Application , to individuals who indicate an interest in registering to vote and who meet the voting registration requirements. Authorized representatives or representative payees also may take form VR30 to the client to complete. Mail form VR30 when the client does not have a face-to-face interview or the client reports a change of address by telephone or by mail. If requested, assist in the completion of form VR30.
+If the applicant or client declines to register to vote during a face-to-face interview, ask the client to sign Form H1350, Opportunity to Register to Vote. Mail Form H1350 to an individual who did not have a face-to-face interview who declines the opportunity to register to vote, based on receipt of form VR30.
+Voter Registration Status — Check the appropriate box under Agency Use Only and sign.
