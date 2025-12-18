@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import json
 import os
 import re
@@ -15,18 +14,14 @@ from src.utils.config import load_config
 
 
 def norm_url(url: str) -> str:
-    """Normalize URL by trimming and removing #fragments."""
     url = (url or "").strip()
     url, _ = urldefrag(url)
     return url
 
-
 def norm_host(url: str) -> str:
     return urlparse(url).netloc.lower().replace("www.", "")
 
-
 def safe_filename(url: str, ext: str) -> str:
-    """Turn a URL into a filesystem-safe filename with the requested extension."""
     p = urlparse(url)
     base = f"{p.netloc}{p.path}"
     if not base or base.endswith("/"):
@@ -35,11 +30,7 @@ def safe_filename(url: str, ext: str) -> str:
     if not base.lower().endswith(ext):
         base += ext
     return base[:200]
-
-
 class Fetcher:
-    """Controlled crawler + downloader for HTML + PDFs using config.yaml rules."""
-
     def __init__(
         self,
         seed_urls: list[str],
@@ -111,11 +102,11 @@ class Fetcher:
         if self.is_denied(url):
             return False
 
-        # Always allow PDFs inside allowed domains.
+        
         if self.is_pdf_url(url):
             return True
 
-        # For HTML pages, enforce allow_patterns to avoid crawling whole site.
+    
         return self.matches_allowed_patterns(url)
 
     def log(self, record: dict) -> None:
@@ -138,7 +129,7 @@ class Fetcher:
         return links
 
     def run(self) -> None:
-        # Reset manifest each run for deterministic runs.
+
         if self.manifest_path.exists():
             self.manifest_path.unlink()
 

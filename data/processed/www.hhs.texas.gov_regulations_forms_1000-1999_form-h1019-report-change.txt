@@ -1,23 +1,27 @@
-FORM H1019, REPORT OF CHANGE
-INSTRUCTIONS FOR OPENING A FORM
+Form H1019, Report of Change
+Instructions for Opening a Form
 Some forms cannot be viewed in a web browser's PDF viewer and must be opened in the Adobe Reader application on your desktop system. Click here for instructions on opening this form.
-DOCUMENTS
+Documents
 h1019.pdf
 h1019-S.pdf
-INSTRUCTIONS
+Instructions
 Updated: 4/2015
-PURPOSE
+Purpose
 To provide clients a form that lists their reporting requirements.
 To provide clients a form to report changes in their circumstances.
 To provide Texas Health and Human Services Commission (HHSC) office staff a form to record information reported by clients about changes in their circumstances.
 To advise the individual that the advisor can explain what type of proof is required for a reported change.
 To provide clients with a receipt of the change(s) they reported.
-PROCEDURE
+Procedure
+When to Prepare
 Clients complete this form when they want to report a change in their circumstances. HHSC office staff also complete the form when the individual reports a change in person or by telephone.
+Number of Copies
 The client or HHSC office staff complete an original and one copy of the form. Provide the individual with the copy if the person requests a receipt of the change.
+Transmittal
 HHSC office staff give this form and a prepaid return envelope to all clients at the initial certification and each recertification, if needed. Staff must issue a new form and envelope to the client each time a change is reported.
+Form Retention
 See retention requirements in the Texas Works Manager's Guide .
-DETAILED INSTRUCTIONS
+Detailed Instructions
 Provide Spanish-speaking households with Form H1019-S (Spanish version).
 Page 1 — Enter an X in the appropriate box next to each category. HHSC office staff must enter an X in only one box using the following guidelines:
 If the household receives ongoing Temporary Assistance for Needy Families (TANF), regardless of whether they receive Supplemental Nutrition Assistance Program (SNAP) food benefits, enter an X in the TANF category. This includes households receiving ongoing TANF and Medicaid or CHIP. Do not enter an X under the SNAP category.
