@@ -11,9 +11,7 @@ SECTION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-
 def chunk_handbook_text(text: str, source_file: str) -> list[dict]:
-    """Split handbook-like text into chunks by section headers."""
     chunks: list[dict] = []
     current_section: str | None = None
     buffer: list[str] = []
