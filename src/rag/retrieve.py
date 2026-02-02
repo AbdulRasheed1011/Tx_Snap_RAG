@@ -1,15 +1,15 @@
 from __future__ import annotations
-
 import json
+import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
-
+from typing import Any, Dict, List
 import numpy as np
 import tensorflow_hub as hub
 import faiss
 
 
 def l2_normalize(x: np.ndarray) -> np.ndarray:
+    """L2-normalize vectors row-wise."""
     norms = np.linalg.norm(x, axis=1, keepdims=True) + 1e-12
     return x / norms
 
@@ -25,7 +25,8 @@ class Hit:
 
 class Retriever:
     """
-    Loads FAISS + metadata once, then can retrieve top-k chunks for any query.
+    Loads FAISS index + metadata once and retrieves top-k chunks for a query.
+    TFHub model is lazy-loaded to avoid startup failures.
     """
 
     def __init__(
@@ -33,21 +34,32 @@ class Retriever:
         index_path: str = "artifacts/index/index.faiss",
         meta_path: str = "artifacts/index/meta.jsonl",
         tfhub_model: str = "https://tfhub.dev/google/universal-sentence-encoder/4",
+        tfhub_cache_dir: str | None = None,
     ) -> None:
         self.index_path = index_path
         self.meta_path = meta_path
         self.tfhub_model = tfhub_model
 
+        # Force safe TFHub behavior (avoid tar.gz corruption issues)
+        os.environ.setdefault("TFHUB_MODEL_LOAD_FORMAT", "UNCOMPRESSED")
+
+        # Optional: project-local TFHub cache
+        if tfhub_cache_dir:
+            os.environ["TFHUB_CACHE_DIR"] = tfhub_cache_dir
+
+        # Load FAISS index and metadata
         self.index = faiss.read_index(self.index_path)
         self.meta = self._load_meta(self.meta_path)
-        self.model = hub.load(self.tfhub_model)
 
-        # Sanity check: meta rows should match FAISS ntotal
+        # Sanity check
         if len(self.meta) != self.index.ntotal:
             raise RuntimeError(
                 f"Meta rows ({len(self.meta)}) != FAISS vectors ({self.index.ntotal}). "
-                f"Your meta/index files are out of sync. Re-run embed_index.py."
+                "Index and metadata are out of sync. Re-run embed_index.py."
             )
+
+        # Lazy-loaded TFHub model
+        self._model = None
 
     @staticmethod
     def _load_meta(meta_path: str) -> List[Dict[str, Any]]:
@@ -65,10 +77,27 @@ class Retriever:
             raise RuntimeError(f"Meta file is empty: {meta_path}")
         return rows
 
+    def _get_model(self):
+        if self._model is not None:
+            return self._model
+        try:
+            self._model = hub.load(self.tfhub_model)
+            return self._model
+        except Exception as e:
+            raise RuntimeError(
+                "Failed to load TFHub embedding model. "
+                "Likely causes: blocked internet/proxy, corrupted cache, or SSL issues. "
+                f"Handle: {self.tfhub_model}."
+            ) from e
+
     def retrieve(self, query: str, top_k: int = 5) -> List[Hit]:
-        q = self.model([query]).numpy().astype(np.float32)
+        model = self._get_model()
+
+        # Embed query
+        q = model([query]).numpy().astype(np.float32)
         q = l2_normalize(q)
 
+        # FAISS search
         scores, row_ids = self.index.search(q, top_k)
 
         hits: List[Hit] = []

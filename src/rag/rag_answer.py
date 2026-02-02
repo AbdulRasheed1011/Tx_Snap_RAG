@@ -1,14 +1,10 @@
 from __future__ import annotations
-
 import os
 import textwrap
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
-
 import requests
-
-from .retrieve import Retriever, Hit
-
+from src.rag.retrieve import Retriever, Hit
 
 @dataclass(frozen=True)
 class RAGResult:

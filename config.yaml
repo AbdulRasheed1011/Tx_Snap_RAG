@@ -2,13 +2,15 @@ project:
   name: Tx-snap-RAG
   description: RAG system for Texas SNAP (HHSC)
   jurisdiction: Tx
-  domani: SNAP
+  domain: SNAP
 
 sources:
   allowed_patterns:
     - /services/food/
     - /handbooks/texas-works-handbook
     - /regulations/forms/
+    - /
+
   allowed_domains:
     - hhs.texas.gov
     - yourtexasbenefits.com
@@ -49,7 +51,7 @@ embedding:
   batch_size : 64
 
 retrieval:
-  top_k : 8
+  top_k : 3ho
   min_score : 0.2
   hybrid : true
 

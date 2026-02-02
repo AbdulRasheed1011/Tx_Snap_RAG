@@ -1,12 +1,26 @@
-
+# Core utilities
 python-dotenv>=1.0.0
 pyyaml>=6.0.1
+tqdm>=4.66.4
 requests>=2.31.0
+
+# Web scraping & parsing
 beautifulsoup4>=4.12.3
 lxml>=5.1.0
+
+# PDF processing
 pypdf>=4.2.0
+pymupdf>=1.23.0
+
+# Tokenization & LLM
 tiktoken>=0.7.0
 openai>=1.30.0
+
+# Retrieval & ranking
 faiss-cpu>=1.8.0
 rank-bm25>=0.2.2
-tqdm>=4.66.4
+
+# LangChain ecosystem
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-community>=0.1.0
