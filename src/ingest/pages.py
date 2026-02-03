@@ -264,6 +264,32 @@ def _load_manifest_map(raw_dir: Path) -> Dict[str, FetchRecord]:
     return out
 
 
+def _fallback_url(doc_id: str) -> str:
+    # Keep OrganizedDoc validation happy when old raw files have no manifest row.
+    return f"https://example.com/unknown/{doc_id}"
+
+
+def _make_organized_doc(
+    *,
+    doc_id: str,
+    kind: Literal["html", "pdf"],
+    source_path: Path,
+    processed_path: Path,
+    text_chars: int,
+    created_at: str,
+    rec: FetchRecord | None,
+) -> OrganizedDoc:
+    return OrganizedDoc(
+        doc_id=doc_id,
+        url=rec.url if rec is not None else _fallback_url(doc_id),
+        kind=kind,
+        source_path=str(source_path),
+        processed_path=str(processed_path),
+        text_chars=text_chars,
+        created_at=created_at,
+    )
+
+
 def organize_all(
     raw_dir: str | Path = "data/raw",
     processed_dir: str | Path = "data/processed",
@@ -315,17 +341,16 @@ def organize_all(
         out_path.write_text(text, encoding="utf-8")
         html_saved += 1
 
-        if rec is not None:
-            meta = OrganizedDoc(
-                doc_id=doc_id,
-                url=rec.url,
-                kind="html",
-                source_path=str(hp),
-                processed_path=str(out_path),
-                text_chars=len(text),
-                created_at=created_at,
-            )
-            organized_rows.append(meta.model_dump(mode="json"))
+        meta = _make_organized_doc(
+            doc_id=doc_id,
+            kind="html",
+            source_path=hp,
+            processed_path=out_path,
+            text_chars=len(text),
+            created_at=created_at,
+            rec=rec,
+        )
+        organized_rows.append(meta.model_dump(mode="json"))
 
         logger.info(f"saved_html doc_id={doc_id} chars={len(text)} out={out_path}")
 
@@ -349,17 +374,16 @@ def organize_all(
                 out_path.write_text(pdf_text, encoding="utf-8")
                 pdf_saved += 1
 
-                if rec is not None:
-                    meta = OrganizedDoc(
-                        doc_id=doc_id,
-                        url=rec.url,
-                        kind="pdf",
-                        source_path=str(pp),
-                        processed_path=str(out_path),
-                        text_chars=len(pdf_text),
-                        created_at=created_at,
-                    )
-                    organized_rows.append(meta.model_dump(mode="json"))
+                meta = _make_organized_doc(
+                    doc_id=doc_id,
+                    kind="pdf",
+                    source_path=pp,
+                    processed_path=out_path,
+                    text_chars=len(pdf_text),
+                    created_at=created_at,
+                    rec=rec,
+                )
+                organized_rows.append(meta.model_dump(mode="json"))
 
                 logger.info(f"saved_pdf doc_id={doc_id} chars={len(pdf_text)} out={out_path}")
 

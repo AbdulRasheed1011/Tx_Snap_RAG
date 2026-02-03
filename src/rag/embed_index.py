@@ -1,30 +1,32 @@
 from __future__ import annotations
 
-import os
 import json
-import glob
-import hashlib
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-import numpy as np
-from tqdm import tqdm
-import tensorflow_hub as hub
 import faiss
+import numpy as np
+from openai import OpenAI
+from tqdm import tqdm
+
+from src.core.settings import AppConfig
 
 
 @dataclass(frozen=True)
 class Chunk:
-    id: str
+    chunk_id: str
     text: str
     metadata: Dict[str, Any]
 
 
-def read_jsonl(path: str) -> Iterable[Dict[str, Any]]:
-    """
-    Reads JSONL. Also tolerates a file that contains a single JSON object on one line.
-    """
-    with open(path, "r", encoding="utf-8") as f:
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
@@ -35,119 +37,152 @@ def read_jsonl(path: str) -> Iterable[Dict[str, Any]]:
                 raise ValueError(f"Invalid JSON on line {line_no} in {path}: {e}") from e
 
 
-def make_chunk_id(source_file: str, section: str, text: str) -> str:
-    # Stable + deterministic. If text changes, id changes. Good.
-    h = hashlib.sha1()
-    h.update(source_file.encode("utf-8"))
-    h.update(b"|")
-    h.update(section.encode("utf-8"))
-    h.update(b"|")
-    h.update(text.encode("utf-8"))
-    return h.hexdigest()
+def _write_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def load_chunks_from_folder(folder: str) -> List[Chunk]:
-    paths = sorted(glob.glob(os.path.join(folder, "*.chunks.jsonl")))
-    if not paths:
-        raise RuntimeError(f"No *.chunks.jsonl files found in: {folder}")
-
-    out: List[Chunk] = []
-    for p in paths:
-        for obj in read_jsonl(p):
-            text = str(obj.get("text", "")).strip()
-            if not text or len(text) < 20:
-                continue
-
-            source_file = str(obj.get("source_file") or os.path.basename(p)).strip()
-            section = str(obj.get("section") or "UNKNOWN").strip()
-
-            cid = make_chunk_id(source_file, section, text)
-            meta = {
-                "source_file": source_file,
-                "section": section,
-                "chunk_file": os.path.basename(p),
-            }
-
-            out.append(Chunk(id=cid, text=text, metadata=meta))
-
-    if not out:
-        raise RuntimeError("Loaded 0 usable chunks. Your chunk texts might be empty/too short.")
-    return out
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
 
 
-def batched(items: List[str], batch_size: int) -> Iterable[List[str]]:
-    for i in range(0, len(items), batch_size):
-        yield items[i : i + batch_size]
-
-
-def l2_normalize(x: np.ndarray) -> np.ndarray:
+def _l2_normalize(x: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(x, axis=1, keepdims=True) + 1e-12
     return x / norms
 
 
-def ensure_dir(path: str) -> None:
-    os.makedirs(path, exist_ok=True)
+def _batched(items: List[str], batch_size: int) -> Iterable[List[str]]:
+    for i in range(0, len(items), batch_size):
+        yield items[i : i + batch_size]
+
+
+def load_chunks(chunks_path: Path, *, min_text_chars: int = 20) -> List[Chunk]:
+    if not chunks_path.exists():
+        raise FileNotFoundError(f"Chunks file not found: {chunks_path}")
+
+    out: List[Chunk] = []
+    for row in _read_jsonl(chunks_path):
+        text = str(row.get("text", "")).strip()
+        if len(text) < min_text_chars:
+            continue
+
+        chunk_id = str(row.get("chunk_id") or "").strip()
+        if not chunk_id:
+            continue
+
+        doc_id = str(row.get("doc_id") or "unknown_doc")
+        start_char = _to_int(row.get("start_char"), 0)
+        end_char = _to_int(row.get("end_char"), 0)
+
+        metadata = {
+            "doc_id": doc_id,
+            "url": str(row.get("url") or ""),
+            "kind": str(row.get("kind") or ""),
+            "start_char": start_char,
+            "end_char": end_char,
+            "token_estimate": _to_int(row.get("token_estimate"), 0),
+            "created_at": str(row.get("created_at") or ""),
+            # Compatibility fields for tools that still display source/section.
+            "source_file": doc_id,
+            "section": f"{start_char}-{end_char}",
+        }
+        out.append(Chunk(chunk_id=chunk_id, text=text, metadata=metadata))
+
+    if not out:
+        raise RuntimeError(f"No usable chunks found in {chunks_path}")
+
+    return out
+
+
+def embed_openai(
+    *,
+    client: OpenAI,
+    texts: List[str],
+    model: str,
+    batch_size: int,
+) -> np.ndarray:
+    vectors: List[List[float]] = []
+    total_batches = (len(texts) + batch_size - 1) // batch_size
+
+    for batch in tqdm(_batched(texts, batch_size), total=total_batches, desc="Embedding"):
+        response = client.embeddings.create(model=model, input=batch)
+        batch_vectors = [item.embedding for item in response.data]
+        if len(batch_vectors) != len(batch):
+            raise RuntimeError(
+                f"Embedding count mismatch: got {len(batch_vectors)} vectors for {len(batch)} texts."
+            )
+        vectors.extend(batch_vectors)
+
+    return np.asarray(vectors, dtype=np.float32)
 
 
 def main() -> None:
-    # --- Inputs ---
-    chunks_dir = "data/organize"  # <- matches your repo
-    # --- Outputs ---
-    out_dir = "artifacts/index"
-    index_path = os.path.join(out_dir, "index.faiss")
-    meta_path = os.path.join(out_dir, "meta.jsonl")
+    cfg = AppConfig.load("config.yaml")
+    if cfg.embedding.provider != "openai":
+        raise ValueError(f"Unsupported embedding provider: {cfg.embedding.provider}")
 
-    # --- Embedding model (TensorFlow-only) ---
-    # Universal Sentence Encoder (512-dim). Fast + solid for semantic search.
-    tfhub_model = "https://tfhub.dev/google/universal-sentence-encoder/4"
-    batch_size = 64
+    chunks_path = Path("data/chunks/chunks.jsonl")
+    out_dir = Path("artifacts/index")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    ensure_dir(out_dir)
+    index_path = out_dir / "index.faiss"
+    meta_path = out_dir / "meta.jsonl"
+    run_meta_path = out_dir / "index_meta.json"
 
-    print(f"[load] chunks from: {chunks_dir}")
-    chunks = load_chunks_from_folder(chunks_dir)
+    print(f"[load] chunks from: {chunks_path}")
+    chunks = load_chunks(chunks_path)
     print(f"[load] usable chunks: {len(chunks)}")
 
     texts = [c.text for c in chunks]
 
-    print(f"[model] loading: {tfhub_model}")
-    model = hub.load(tfhub_model)
-
-    all_vecs: List[np.ndarray] = []
-    print("[embed] embedding chunks...")
-    for batch in tqdm(list(batched(texts, batch_size))):
-        # TF Hub model returns a Tensor with shape (B, 512)
-        vecs = model(batch).numpy().astype(np.float32)
-        all_vecs.append(vecs)
-
-    vectors = np.vstack(all_vecs).astype(np.float32)
-    vectors = l2_normalize(vectors)  # cosine via inner product
+    print(f"[embed] provider=openai model={cfg.embedding.model} batch_size={cfg.embedding.batch_size}")
+    client = OpenAI()
+    vectors = embed_openai(
+        client=client,
+        texts=texts,
+        model=cfg.embedding.model,
+        batch_size=cfg.embedding.batch_size,
+    )
+    vectors = _l2_normalize(vectors)
 
     dim = vectors.shape[1]
-    print(f"[index] building FAISS IndexFlatIP (dim={dim}, n={vectors.shape[0]})")
     index = faiss.IndexFlatIP(dim)
     index.add(vectors)
+    faiss.write_index(index, str(index_path))
 
-    print(f"[save] {index_path} (FAISS index file: your local vector store)")
-    faiss.write_index(index, index_path)
+    meta_rows: List[Dict[str, Any]] = []
+    for row, chunk in enumerate(chunks):
+        meta_rows.append(
+            {
+                "row": row,
+                "id": chunk.chunk_id,
+                "metadata": chunk.metadata,
+                "text": chunk.text,
+            }
+        )
+    _write_jsonl(meta_path, meta_rows)
 
-    print(f"[save] {meta_path}")
-    with open(meta_path, "w", encoding="utf-8") as f:
-        for row, c in enumerate(chunks):
-            f.write(
-                json.dumps(
-                    {
-                        "row": row,
-                        "id": c.id,
-                        "metadata": c.metadata,
-                        "text": c.text,  # keep for debugging; remove later if too big
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
+    run_meta = {
+        "created_at": _utc_iso(),
+        "embedding_provider": cfg.embedding.provider,
+        "embedding_model": cfg.embedding.model,
+        "vectors": len(chunks),
+        "dimension": dim,
+        "chunks_path": str(chunks_path),
+        "index_path": str(index_path),
+        "meta_path": str(meta_path),
+    }
+    run_meta_path.write_text(json.dumps(run_meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print("[done] index + meta saved.")
+    print(f"[save] index: {index_path}")
+    print(f"[save] meta: {meta_path}")
+    print(f"[save] run meta: {run_meta_path}")
+    print("[done] FAISS index build complete.")
 
 
 if __name__ == "__main__":

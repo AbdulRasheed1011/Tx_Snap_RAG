@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional, Literal
+from typing import Iterable, Literal, Optional
 
 import requests
 from pydantic import BaseModel, Field, HttpUrl
@@ -47,6 +47,19 @@ def _write_jsonl(path: Path, rows: Iterable[dict]) -> None:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
+def _read_jsonl(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    if not path.exists():
+        return rows
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rows.append(json.loads(line))
+    return rows
+
+
 def fetch_seed_urls(cfg: AppConfig, out_raw_dir="data/raw", *, overwrite=False, run_id: str | None = None):
     run_id = run_id or get_run_id()
 
@@ -62,6 +75,15 @@ def fetch_seed_urls(cfg: AppConfig, out_raw_dir="data/raw", *, overwrite=False, 
     skipped = 0
     failed = 0
     manifest_rows: list[dict] = []
+    manifest_path = out_raw_dir / "fetch_manifest.jsonl"
+
+    existing_manifest: dict[str, FetchRecord] = {}
+    for row in _read_jsonl(manifest_path):
+        try:
+            rec = FetchRecord.model_validate(row)
+            existing_manifest[rec.doc_id] = rec
+        except Exception:
+            continue
 
     seed_urls = [str(u) for u in cfg.sources.seed_urls]
     logger.info(
@@ -76,6 +98,25 @@ def fetch_seed_urls(cfg: AppConfig, out_raw_dir="data/raw", *, overwrite=False, 
         # Idempotency: skip if already present unless overwrite=True
         if not overwrite and (html_path.exists() or pdf_path.exists()):
             skipped += 1
+            if pdf_path.exists():
+                kind: Literal["html", "pdf"] = "pdf"
+                saved_path = pdf_path
+            else:
+                kind = "html"
+                saved_path = html_path
+
+            prev = existing_manifest.get(doc_id)
+            rec = FetchRecord(
+                run_id=run_id,
+                doc_id=doc_id,
+                url=url,
+                kind=kind,
+                content_type=prev.content_type if prev else "",
+                bytes=saved_path.stat().st_size if saved_path.exists() else 0,
+                saved_path=str(saved_path),
+                fetched_at=prev.fetched_at if prev else _utc_iso(),
+            )
+            manifest_rows.append(rec.model_dump(mode="json"))
             logger.info(f"run_id={run_id} skip_exists url={url} doc_id={doc_id}")
             continue
 
@@ -130,7 +171,6 @@ def fetch_seed_urls(cfg: AppConfig, out_raw_dir="data/raw", *, overwrite=False, 
             failed += 1
             logger.exception(f"run_id={run_id} failed url={url} error={e}")
 
-    manifest_path = out_raw_dir / "fetch_manifest.jsonl"
     _write_jsonl(manifest_path, manifest_rows)
 
     logger.info(
