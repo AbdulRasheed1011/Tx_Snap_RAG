@@ -13,7 +13,7 @@ SUBNET_IDS_CSV="${SUBNET_IDS_CSV:-}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 DESIRED_COUNT="${DESIRED_COUNT:-1}"
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.1}"
-CORS_ALLOW_ORIGINS="${CORS_ALLOW_ORIGINS:-*}"
+CORS_ALLOW_ORIGINS="${CORS_ALLOW_ORIGINS:-}"
 API_KEY_VALUE="${API_KEY_VALUE:-}"
 AUTO_APPROVE="${AUTO_APPROVE:-false}"
 
@@ -36,8 +36,8 @@ Options:
   --image-tag latest
   --desired-count 1
   --ollama-model llama3.1
-  --cors-allow-origins "*"
-  --api-key-value "<strong-api-key>"   # optional
+  --cors-allow-origins "https://app.example.com"
+  --api-key-value "<strong-api-key>"   # required for secure startup
   --auto-approve                       # optional terraform auto-approve
 EOF
 }
@@ -71,6 +71,11 @@ require_cmd() {
 if [[ -z "${HOSTED_ZONE_NAME}" || -z "${HOSTED_ZONE_ID}" || -z "${VPC_ID}" || -z "${SUBNET_IDS_CSV}" ]]; then
   echo "ERROR: Missing required values." >&2
   usage
+  exit 1
+fi
+
+if [[ -z "${API_KEY_VALUE}" ]]; then
+  echo "ERROR: --api-key-value is required for production deployment (REQUIRE_API_KEY=true)." >&2
   exit 1
 fi
 
@@ -111,6 +116,7 @@ TF_VARS=(
   -var "subnet_ids=${SUBNET_TF_LIST}"
   -var "ollama_model=${OLLAMA_MODEL}"
   -var "cors_allow_origins=${CORS_ALLOW_ORIGINS}"
+  -var "require_api_key=true"
 )
 
 TF_APPLY_ARGS=()
@@ -136,15 +142,11 @@ echo "==> Terraform apply (bootstrap with desired_count=0)"
 ECR_REPO_URL="$(cd "${TF_DIR}" && command terraform output -raw ecr_repository_url)"
 API_KEY_SECRET_ARN="$(cd "${TF_DIR}" && command terraform output -raw api_key_secret_arn)"
 
-if [[ -n "${API_KEY_VALUE}" ]]; then
-  echo "==> Updating API key in Secrets Manager"
-  command aws secretsmanager put-secret-value \
-    --region "${AWS_REGION}" \
-    --secret-id "${API_KEY_SECRET_ARN}" \
-    --secret-string "${API_KEY_VALUE}" >/dev/null
-else
-  echo "==> Skipping API key update (set --api-key-value or API_KEY_VALUE to configure it now)"
-fi
+echo "==> Updating API key in Secrets Manager"
+command aws secretsmanager put-secret-value \
+  --region "${AWS_REGION}" \
+  --secret-id "${API_KEY_SECRET_ARN}" \
+  --secret-string "${API_KEY_VALUE}" >/dev/null
 
 echo "==> ECR login"
 command aws ecr get-login-password --region "${AWS_REGION}" \

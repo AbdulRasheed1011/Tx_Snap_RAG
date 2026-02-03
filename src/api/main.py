@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from threading import BoundedSemaphore
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, Header, HTTPException
@@ -38,7 +39,11 @@ def _load_settings() -> ApiSettings:
         ollama_model=os.getenv("OLLAMA_MODEL", "llama3.1"),
         ollama_timeout_seconds=int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180")),
         api_key=os.getenv("API_KEY") or None,
+        require_api_key=os.getenv("REQUIRE_API_KEY", "true").lower() in {"1", "true", "yes"},
         cors_allow_origins=cors_allow_origins,
+        allow_insecure_cors_wildcard=os.getenv("ALLOW_INSECURE_CORS_WILDCARD", "false").lower()
+        in {"1", "true", "yes"},
+        max_concurrent_requests=int(os.getenv("MAX_CONCURRENT_REQUESTS", "16")),
         disable_generation=os.getenv("RAG_DISABLE_GENERATION", "false").lower() in {"1", "true", "yes"},
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )
@@ -46,6 +51,7 @@ def _load_settings() -> ApiSettings:
 
 def create_app() -> FastAPI:
     settings = _load_settings()
+    request_slots = BoundedSemaphore(value=settings.max_concurrent_requests)
 
     application = FastAPI(title="Tx_Snap_RAG API", version="0.2.0")
 
@@ -64,6 +70,12 @@ def create_app() -> FastAPI:
         application.state.settings = settings
         application.state.startup_error = None
         try:
+            if settings.require_api_key and not settings.api_key:
+                raise RuntimeError("API_KEY is required when REQUIRE_API_KEY=true.")
+            if not settings.allow_insecure_cors_wildcard and "*" in settings.cors_allow_origins:
+                raise RuntimeError(
+                    "Wildcard CORS is disabled. Set explicit origins or ALLOW_INSECURE_CORS_WILDCARD=true."
+                )
             application.state.rag_engine = LangChainRAG(
                 config_path=settings.config_path,
                 chunks_path=settings.chunks_path,
@@ -95,6 +107,7 @@ def create_app() -> FastAPI:
                 "chunks_path": settings.chunks_path,
                 "ollama_url": settings.ollama_url,
                 "ollama_model": settings.ollama_model,
+                "require_api_key": settings.require_api_key,
             }
 
         ollama_ok, ollama_detail = (True, "generation_disabled")
@@ -119,6 +132,8 @@ def create_app() -> FastAPI:
             "ollama_url": settings.ollama_url,
             "ollama_model": settings.ollama_model,
             "ollama_status": ollama_detail,
+            "require_api_key": settings.require_api_key,
+            "max_concurrent_requests": settings.max_concurrent_requests,
         }
 
     @application.get("/metrics")
@@ -136,7 +151,7 @@ def create_app() -> FastAPI:
             REQUESTS_TOTAL.labels(endpoint="/answer", status="503").inc()
             raise HTTPException(status_code=503, detail=f"Service is not ready: {startup_error}")
 
-        if settings.api_key and x_api_key != settings.api_key:
+        if settings.require_api_key and settings.api_key and x_api_key != settings.api_key:
             REQUESTS_TOTAL.labels(endpoint="/answer", status="401").inc()
             raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -145,49 +160,57 @@ def create_app() -> FastAPI:
             REQUESTS_TOTAL.labels(endpoint="/answer", status="503").inc()
             raise HTTPException(status_code=503, detail="Service is not ready: RAG engine is not initialized.")
 
-        with REQUEST_LATENCY_SECONDS.labels(endpoint="/answer").time():
-            result = rag_engine.answer(req.question, top_k=req.top_k)
+        acquired = request_slots.acquire(blocking=False)
+        if not acquired:
+            REQUESTS_TOTAL.labels(endpoint="/answer", status="429").inc()
+            raise HTTPException(status_code=429, detail="Server is busy. Please retry.")
 
-            ANSWER_ATTEMPTS_TOTAL.labels(
-                retrieval_mode=result.mode,
-                should_answer=str(result.should_answer).lower(),
-            ).inc()
+        try:
+            with REQUEST_LATENCY_SECONDS.labels(endpoint="/answer").time():
+                result = rag_engine.answer(req.question, top_k=req.top_k)
 
-            citations: List[Citation] = []
-            for c in result.citations:
-                md = c.metadata or {}
-                citations.append(
-                    Citation(
-                        cite=c.cite,
-                        score=c.score,
-                        chunk_id=c.chunk_id,
-                        doc_id=md.get("doc_id"),
-                        url=md.get("url"),
-                        start_char=md.get("start_char"),
-                        end_char=md.get("end_char"),
-                        retrieval_mode=result.mode,
-                        dense_score=c.dense_score,
-                        bm25_score=c.bm25_score,
-                        coverage=c.coverage,
+                ANSWER_ATTEMPTS_TOTAL.labels(
+                    retrieval_mode=result.mode,
+                    should_answer=str(result.should_answer).lower(),
+                ).inc()
+
+                citations: List[Citation] = []
+                for c in result.citations:
+                    md = c.metadata or {}
+                    citations.append(
+                        Citation(
+                            cite=c.cite,
+                            score=c.score,
+                            chunk_id=c.chunk_id,
+                            doc_id=md.get("doc_id"),
+                            url=md.get("url"),
+                            start_char=md.get("start_char"),
+                            end_char=md.get("end_char"),
+                            retrieval_mode=result.mode,
+                            dense_score=c.dense_score,
+                            bm25_score=c.bm25_score,
+                            coverage=c.coverage,
+                        )
                     )
-                )
 
-            REQUESTS_TOTAL.labels(endpoint="/answer", status="200").inc()
-            return AnswerResponse(
-                answer=result.answer,
-                citations=citations,
-                retrieval={
-                    "mode": result.mode,
-                    "should_answer": result.should_answer,
-                    "reason": result.reason,
-                    "top_k": req.top_k or rag_engine.cfg.retrieval.top_k,
-                },
-                timing=Timing(
-                    retrieval_seconds=result.retrieval_seconds,
-                    generation_seconds=result.generation_seconds,
-                    total_seconds=result.total_seconds,
-                ),
-            )
+                REQUESTS_TOTAL.labels(endpoint="/answer", status="200").inc()
+                return AnswerResponse(
+                    answer=result.answer,
+                    citations=citations,
+                    retrieval={
+                        "mode": result.mode,
+                        "should_answer": result.should_answer,
+                        "reason": result.reason,
+                        "top_k": req.top_k or rag_engine.cfg.retrieval.top_k,
+                    },
+                    timing=Timing(
+                        retrieval_seconds=result.retrieval_seconds,
+                        generation_seconds=result.generation_seconds,
+                        total_seconds=result.total_seconds,
+                    ),
+                )
+        finally:
+            request_slots.release()
 
     return application
 

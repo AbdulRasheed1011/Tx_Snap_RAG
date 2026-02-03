@@ -282,6 +282,7 @@ What you get:
   --api-subdomain api \
   --vpc-id vpc-0123456789abcdef0 \
   --subnet-ids subnet-aaa111,subnet-bbb222 \
+  --cors-allow-origins https://app.neweraon.com \
   --image-tag latest \
   --desired-count 1 \
   --api-key-value 'REPLACE_WITH_STRONG_KEY'
@@ -290,8 +291,9 @@ What you get:
 What this script does:
 1. Creates base AWS infra with service scaled to zero (no broken image pull).
 2. Pushes your FastAPI image to ECR.
-3. Scales ECS service up with HTTPS endpoint enabled.
-4. Prints your public API URL and test commands.
+3. Enables secure API startup checks (API key required, wildcard CORS blocked by default).
+4. Scales ECS service up with HTTPS endpoint enabled.
+5. Prints your public API URL and test commands.
 
 ---
 
@@ -310,6 +312,8 @@ terraform apply \
   -var 'api_subdomain=api' \
   -var 'vpc_id=vpc-0123456789abcdef0' \
   -var 'subnet_ids=["subnet-aaa111","subnet-bbb222"]' \
+  -var 'cors_allow_origins=https://app.neweraon.com' \
+  -var 'require_api_key=true' \
   -var 'image_tag=bootstrap' \
   -var 'desired_count=0'
 ```
@@ -355,6 +359,8 @@ terraform apply \
   -var 'api_subdomain=api' \
   -var 'vpc_id=vpc-0123456789abcdef0' \
   -var 'subnet_ids=["subnet-aaa111","subnet-bbb222"]' \
+  -var 'cors_allow_origins=https://app.neweraon.com' \
+  -var 'require_api_key=true' \
   -var 'desired_count=1' \
   -var 'image_tag=latest'
 ```
@@ -370,6 +376,7 @@ curl -sS -X POST "$API_URL/answer" \
 ```
 
 Note: first startup can take longer while Ollama downloads the model. `/readyz` reports model status.
+Autoscaling and an ALB target 5xx CloudWatch alarm are provisioned by default.
 
 ---
 

@@ -9,6 +9,6 @@ export RAG_META_PATH="${RAG_META_PATH:-artifacts/index/meta.jsonl}"
 
 export OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434/api/generate}"
 export OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.1}"
+export REQUIRE_API_KEY="${REQUIRE_API_KEY:-false}"
 
 exec uvicorn src.api.main:app --host 0.0.0.0 --port "${PORT:-8000}"
-

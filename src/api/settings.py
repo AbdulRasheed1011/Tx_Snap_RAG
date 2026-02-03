@@ -19,7 +19,10 @@ class ApiSettings(BaseModel):
 
     # Public API controls
     api_key: Optional[str] = Field(default=None)
+    require_api_key: bool = Field(default=True)
     cors_allow_origins: List[str] = Field(default_factory=list)
+    allow_insecure_cors_wildcard: bool = Field(default=False)
+    max_concurrent_requests: int = Field(default=16, gt=0)
 
     # Serving behavior
     disable_generation: bool = Field(default=False)

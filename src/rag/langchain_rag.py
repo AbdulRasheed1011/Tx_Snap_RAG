@@ -161,6 +161,9 @@ class LangChainRAG:
         self.cfg = AppConfig.load(config_path)
         self.min_score = float(self.cfg.retrieval.min_score)
         self.disable_generation = disable_generation
+        self.generation_retries = max(int(os.getenv("RAG_GENERATION_RETRIES", "2")), 0)
+        self.generation_retry_backoff_seconds = float(os.getenv("RAG_GENERATION_RETRY_BACKOFF_SECONDS", "1.0"))
+        self.min_faiss_chunk_overlap = float(os.getenv("RAG_MIN_FAISS_CHUNK_OVERLAP", "0.9"))
         self.retrieval_mode = "langchain_bm25"
         self.hybrid_enabled = False
         self.hybrid_disabled_reason = ""
@@ -269,6 +272,11 @@ class LangChainRAG:
 
                 docstore_data[chunk_id] = doc
                 index_to_docstore_id[row_idx] = chunk_id
+
+            overlap_ratio = len(docstore_data) / max(len(meta_rows), 1)
+            if overlap_ratio < self.min_faiss_chunk_overlap:
+                self.hybrid_disabled_reason = f"faiss_chunk_drift(overlap={overlap_ratio:.2f})"
+                return
 
             if len(index_to_docstore_id) != index.ntotal:
                 self.hybrid_disabled_reason = "faiss_meta_size_mismatch"
@@ -397,6 +405,24 @@ class LangChainRAG:
         ranked.sort(key=lambda x: x["score"], reverse=True)
         return ranked[:top_k]
 
+    def _generate_with_retries(self, question: str, context_block: str) -> str:
+        attempts = self.generation_retries + 1
+        last_error: Exception | None = None
+
+        for i in range(attempts):
+            try:
+                answer = self.answer_chain.invoke({"question": question, "context": context_block}).strip()
+                if answer:
+                    return answer
+                last_error = RuntimeError("empty_generation")
+            except Exception as e:
+                last_error = e
+
+            if i < attempts - 1:
+                time.sleep(self.generation_retry_backoff_seconds)
+
+        raise RuntimeError(f"generation_failed_after_retries: {last_error}")
+
     def answer(self, question: str, *, top_k: int | None = None) -> LangChainRagResult:
         t0 = time.perf_counter()
         k = max(top_k or self.cfg.retrieval.top_k, 1)
@@ -435,15 +461,6 @@ class LangChainRAG:
         ordered_docs = [item["doc"] for item in ranked]
         context_block = _format_context(ordered_docs)
 
-        t_generation0 = time.perf_counter()
-        if self.disable_generation:
-            answer_text = "(generation disabled)"
-        else:
-            answer_text = self.answer_chain.invoke({"question": question, "context": context_block}).strip()
-            if not answer_text:
-                answer_text = "I don't have enough information in the provided documents."
-        generation_seconds = time.perf_counter() - t_generation0
-
         citations: List[LangChainCitation] = []
         for i, item in enumerate(ranked, start=1):
             doc = item["doc"]
@@ -461,12 +478,33 @@ class LangChainRAG:
                 )
             )
 
+        t_generation0 = time.perf_counter()
+        generation_fallback_reason = ""
+        if self.disable_generation:
+            answer_text = "(generation disabled)"
+        else:
+            try:
+                answer_text = self._generate_with_retries(question=question, context_block=context_block)
+            except Exception:
+                generation_fallback_reason = "generation_unavailable"
+                answer_text = (
+                    "I found relevant context, but answer generation is temporarily unavailable. "
+                    "Please retry."
+                )
+        generation_seconds = time.perf_counter() - t_generation0
+
+        final_reason = "ok"
+        if fallback_reason:
+            final_reason = f"{final_reason}(fallback={fallback_reason})"
+        if generation_fallback_reason:
+            final_reason = f"{final_reason};{generation_fallback_reason}"
+
         return LangChainRagResult(
             answer=answer_text,
             citations=citations,
             mode=self.retrieval_mode,
-            should_answer=True,
-            reason="ok" if not fallback_reason else f"ok(fallback={fallback_reason})",
+            should_answer=not bool(generation_fallback_reason),
+            reason=final_reason,
             retrieval_seconds=retrieval_seconds,
             generation_seconds=generation_seconds,
             total_seconds=time.perf_counter() - t0,

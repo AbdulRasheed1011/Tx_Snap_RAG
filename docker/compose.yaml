@@ -12,6 +12,7 @@ services:
       RAG_INDEX_PATH: ${RAG_INDEX_PATH:-/app/artifacts/index/index.faiss}
       RAG_META_PATH: ${RAG_META_PATH:-/app/artifacts/index/meta.jsonl}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
       # Set to true for smoke tests without Ollama:
       # RAG_DISABLE_GENERATION: "true"
     ports:
@@ -19,4 +20,3 @@ services:
     volumes:
       - ../data:/app/data
       - ../artifacts:/app/artifacts
-

@@ -309,8 +309,14 @@ resource "aws_ecs_task_definition" "task" {
       ]
       environment = [
         { name = "CORS_ALLOW_ORIGINS", value = var.cors_allow_origins },
+        { name = "REQUIRE_API_KEY", value = tostring(var.require_api_key) },
+        { name = "ALLOW_INSECURE_CORS_WILDCARD", value = tostring(var.allow_insecure_cors_wildcard) },
+        { name = "MAX_CONCURRENT_REQUESTS", value = tostring(var.max_concurrent_requests) },
         { name = "OLLAMA_URL", value = "http://localhost:11434/api/generate" },
         { name = "OLLAMA_MODEL", value = var.ollama_model },
+        { name = "RAG_GENERATION_RETRIES", value = tostring(var.rag_generation_retries) },
+        { name = "RAG_GENERATION_RETRY_BACKOFF_SECONDS", value = tostring(var.rag_generation_retry_backoff_seconds) },
+        { name = "RAG_MIN_FAISS_CHUNK_OVERLAP", value = tostring(var.rag_min_faiss_chunk_overlap) },
         { name = "RAG_CONFIG_PATH", value = "/app/config.yaml" },
         { name = "RAG_CHUNKS_PATH", value = "/app/data/chunks/chunks.jsonl" },
         { name = "RAG_INDEX_PATH", value = "/app/artifacts/index/index.faiss" },
@@ -350,4 +356,70 @@ resource "aws_ecs_service" "service" {
   }
 
   depends_on = [aws_lb_listener.https]
+}
+
+resource "aws_appautoscaling_target" "ecs_service" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  max_capacity       = var.max_task_count
+  min_capacity       = var.min_task_count
+  resource_id        = "service/${aws_ecs_cluster.cluster.name}/${aws_ecs_service.service.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "cpu_target" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${var.project_name}-cpu-target"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_service[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_service[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_service[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = var.target_cpu_utilization
+    scale_in_cooldown  = var.scale_in_cooldown_seconds
+    scale_out_cooldown = var.scale_out_cooldown_seconds
+  }
+}
+
+resource "aws_appautoscaling_policy" "memory_target" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${var.project_name}-memory-target"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_service[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_service[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_service[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+    target_value       = var.target_memory_utilization
+    scale_in_cooldown  = var.scale_in_cooldown_seconds
+    scale_out_cooldown = var.scale_out_cooldown_seconds
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "alb_target_5xx" {
+  alarm_name          = "${var.project_name}-alb-target-5xx"
+  alarm_description   = "ALB target 5xx errors are elevated."
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = var.target_5xx_alarm_threshold
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.alb.arn_suffix
+    TargetGroup  = aws_lb_target_group.api.arn_suffix
+  }
 }

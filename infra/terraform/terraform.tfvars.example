@@ -13,3 +13,20 @@ subnet_ids = [
 image_tag     = "latest"
 desired_count = 1
 ollama_model  = "llama3.1"
+
+# Security + runtime safety
+require_api_key               = true
+cors_allow_origins            = "https://app.neweraon.com"
+allow_insecure_cors_wildcard  = false
+max_concurrent_requests       = 16
+rag_generation_retries        = 2
+rag_generation_retry_backoff_seconds = 1
+rag_min_faiss_chunk_overlap   = 0.9
+
+# Autoscaling + alarms
+enable_autoscaling            = true
+min_task_count                = 1
+max_task_count                = 4
+target_cpu_utilization        = 70
+target_memory_utilization     = 75
+target_5xx_alarm_threshold    = 20
