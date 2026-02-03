@@ -38,25 +38,29 @@ ingestion:
   max_pages: 200
   user_agent: tx-snap-rag-bot/1.0
   max_pdfs_per_page: 10
+  max_pdf_mb: 20
+
+pdf:
+  enabled: true
+  extract_method: pypdf
 
 chunking:
-  meathod : heading
-  min_tokens : 200
-  max_tokens : 800
-  overlap_tokens : 100
+  method: heading
+  min_tokens: 200
+  max_tokens: 800
+  overlap_tokens: 100
 
 embedding:
-  provider : openai
-  model : text-embedding-3-large
-  batch_size : 64
+  provider: openai
+  model: text-embedding-3-large
+  batch_size: 64
 
 retrieval:
-  top_k : 3ho
-  min_score : 0.2
-  hybrid : true
+  top_k: 3
+  min_score: 0.2
+  hybrid: true
 
 generation:
-  max_tokens : 512
-  temperature : 0.0
-  require_citations : true
-  
+  max_tokens: 512
+  temperature: 0.0
+  require_citations: true

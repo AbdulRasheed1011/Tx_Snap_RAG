@@ -4,24 +4,28 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-
-def get_logger(name: str, log_dir: str = "artifacts/logs", level: int = logging.INFO) -> logging.Logger:
+def get_logger(
+    name: str,
+    log_dir: str = "artifacts/logs",
+    level: int = logging.INFO,
+) -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
 
     logger.setLevel(level)
-    Path(log_dir).mkdir(parents=True, exist_ok=True)
 
-    formatter = logging.Formatter(LOG_FORMAT)
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    log_path = Path(log_dir) / "app.log"
+
+    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
     sh = logging.StreamHandler()
-    sh.setFormatter(formatter)
+    sh.setFormatter(fmt)
     logger.addHandler(sh)
 
-    fh = RotatingFileHandler(Path(log_dir) / "app.log", maxBytes=2_000_000, backupCount=5)
-    fh.setFormatter(formatter)
+    fh = RotatingFileHandler(log_path, maxBytes=5_000_000, backupCount=5)
+    fh.setFormatter(fmt)
     logger.addHandler(fh)
 
     logger.propagate = False

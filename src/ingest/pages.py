@@ -1,20 +1,41 @@
 from __future__ import annotations
+
+import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict, Iterable, List, Literal, Optional
 
 from bs4 import BeautifulSoup
+from pydantic import BaseModel, Field, HttpUrl
+
+from src.core.logging import get_logger
 
 try:
     from pypdf import PdfReader
 except Exception:
     PdfReader = None
 
+try:
+    import fitz  # pymupdf
+except Exception:
+    fitz = None
 
+logger = get_logger("ingest.pages")
+
+
+# Heuristic: lines that look like handbook sections / headings
 SECTION_LINE = re.compile(
-    r"^(?:[A-Z]-\d{3,4}\s*[,\-]?\s+.+|B-\d{3}\s+.+|Part\s+[A-Z],\s+.+|Section\s+\d{3,4},\s+.+)$",
+    r"^(?:"
+    r"[A-Z]-\d{3,4}\s*[,\-]?\s+.+|"
+    r"B-\d{3}\s+.+|"
+    r"Part\s+[A-Z],\s+.+|"
+    r"Section\s+\d{3,4},\s+.+"
+    r")$",
     re.IGNORECASE,
 )
 
+# Common nav/footer junk text seen on government handbook pages
 JUNK_EXACT = {
     "search this handbook",
     "printer-friendly version",
@@ -27,10 +48,55 @@ JUNK_EXACT = {
 }
 
 JUNK_SUBSTRINGS = [
-    "menu button for",
     "skip to main content",
+    "menu button",
     "breadcrumb",
 ]
+
+
+class FetchRecord(BaseModel):
+    run_id: str
+    doc_id: str
+    url: HttpUrl
+    kind: Literal["html", "pdf"]
+    content_type: str = ""
+    bytes: int = Field(ge=0)
+    saved_path: str
+    fetched_at: str
+
+
+class OrganizedDoc(BaseModel):
+    doc_id: str
+    url: HttpUrl
+    kind: Literal["html", "pdf"]
+    source_path: str
+    processed_path: str
+    text_chars: int = Field(ge=0)
+    created_at: str
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _read_jsonl(path: Path) -> List[dict]:
+    rows: List[dict] = []
+    if not path.exists():
+        return rows
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rows.append(json.loads(line))
+    return rows
+
+
+def _write_jsonl(path: Path, rows: Iterable[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
 def _is_junk_line(line: str) -> bool:
@@ -43,6 +109,7 @@ def _is_junk_line(line: str) -> bool:
 
 
 def _looks_like_toc(lines: list[str]) -> bool:
+    """Detect table-of-contents pages that are mostly short section-like lines."""
     if not lines:
         return True
 
@@ -58,10 +125,12 @@ def _looks_like_toc(lines: list[str]) -> bool:
         if len(t) <= 90 and SECTION_LINE.match(t):
             short_sectionish += 1
 
+    # Lots of section-looking lines, few long paragraphs => likely TOC
     return short_sectionish >= 10 and long_para <= 2
 
 
-def _extract_main_soup(html: str) -> BeautifulSoup:
+def _extract_main_root(html: str) -> BeautifulSoup:
+    """Remove obvious non-content elements and choose a best-effort main content root."""
     soup = BeautifulSoup(html, "html.parser")
 
     for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]):
@@ -78,13 +147,13 @@ def _extract_main_soup(html: str) -> BeautifulSoup:
 
 
 def parse_html_to_text(html_path: str | Path) -> str:
+    """Convert a raw HTML file into cleaned plain text suitable for chunking."""
     html_path = Path(html_path)
     html = html_path.read_text(encoding="utf-8", errors="ignore")
 
-    root = _extract_main_soup(html)
+    root = _extract_main_root(html)
 
     raw_lines: list[str] = []
-
     for el in root.find_all(["h1", "h2", "h3", "h4", "p", "li"], recursive=True):
         text = el.get_text(" ", strip=True)
         if not text:
@@ -99,8 +168,9 @@ def parse_html_to_text(html_path: str | Path) -> str:
 
         raw_lines.append(text)
 
+    # De-dupe and remove junk
     cleaned: list[str] = []
-    prev = None
+    prev: Optional[str] = None
     for ln in raw_lines:
         ln = ln.strip()
         if _is_junk_line(ln):
@@ -110,10 +180,11 @@ def parse_html_to_text(html_path: str | Path) -> str:
         cleaned.append(ln)
         prev = ln
 
-    # Skip table-of-contents dumps
+    # Skip TOC-like pages
     if _looks_like_toc(cleaned):
         return ""
 
+    # Improve readability: add blank lines around headings
     out_lines: list[str] = []
     for ln in cleaned:
         if SECTION_LINE.match(ln) or ln.isupper():
@@ -121,72 +192,204 @@ def parse_html_to_text(html_path: str | Path) -> str:
         else:
             out_lines.append(ln)
 
-    out = "\n".join([l for l in out_lines if l is not None])
+    # Normalize whitespace
+    out = "\n".join(out_lines)
     out = "\n".join([l.rstrip() for l in out.splitlines()])
-    out = "\n".join([l for l in out.splitlines() if l.strip()])
-    return out
+
+    # Collapse multiple blank lines
+    collapsed: list[str] = []
+    blank_run = 0
+    for line in out.splitlines():
+        if not line.strip():
+            blank_run += 1
+            if blank_run <= 1:
+                collapsed.append("")
+            continue
+        blank_run = 0
+        collapsed.append(line)
+
+    # Trim leading/trailing blanks
+    while collapsed and collapsed[0] == "":
+        collapsed.pop(0)
+    while collapsed and collapsed[-1] == "":
+        collapsed.pop()
+
+    return "\n".join(collapsed)
 
 
 def parse_pdf_to_text(pdf_path: str | Path) -> str:
-    if PdfReader is None:
-        raise RuntimeError("pypdf not installed. Add 'pypdf' to requirements.txt")
-
+    """Extract text from PDF using pypdf first, then pymupdf fallback."""
     pdf_path = Path(pdf_path)
-    reader = PdfReader(str(pdf_path))
 
+    if PdfReader is not None:
+        try:
+            reader = PdfReader(str(pdf_path))
+            parts: list[str] = []
+            for page in reader.pages:
+                txt = (page.extract_text() or "").strip()
+                if txt:
+                    parts.append(txt)
+            joined = "\n\n".join(parts).strip()
+            if joined:
+                return joined
+        except Exception:
+            pass
+
+    if fitz is None:
+        raise RuntimeError("No PDF extractor available. Install 'pypdf' or 'pymupdf'.")
+
+    doc = fitz.open(str(pdf_path))
     parts: list[str] = []
-    for page in reader.pages:
-        txt = (page.extract_text() or "").strip()
+    for page in doc:
+        txt = (page.get_text("text") or "").strip()
         if txt:
             parts.append(txt)
+    doc.close()
+    return "\n\n".join(parts).strip()
 
-    return "\n\n".join(parts)
+
+def _load_manifest_map(raw_dir: Path) -> Dict[str, FetchRecord]:
+    """Map doc_id -> FetchRecord from data/raw/fetch_manifest.jsonl."""
+    manifest_path = raw_dir / "fetch_manifest.jsonl"
+    rows = _read_jsonl(manifest_path)
+
+    out: Dict[str, FetchRecord] = {}
+    for r in rows:
+        try:
+            rec = FetchRecord.model_validate(r)
+            out[rec.doc_id] = rec
+        except Exception as e:
+            logger.warning(f"manifest_row_invalid error={e} row_keys={list(r.keys())}")
+
+    return out
 
 
-def clean_all(raw_dir: str | Path = "data/raw", processed_dir: str | Path = "data/processed") -> None:
+def organize_all(
+    raw_dir: str | Path = "data/raw",
+    processed_dir: str | Path = "data/processed",
+    organized_dir: str | Path = "data/organized",
+) -> dict[str, int]:
+    """Convert raw HTML/PDF into cleaned .txt files + write docs index.
+
+    Outputs:
+      - data/processed/<doc_id>.txt
+      - data/organized/docs.jsonl
+
+    Returns counters for monitoring.
+    """
+
     raw_dir = Path(raw_dir)
     processed_dir = Path(processed_dir)
+    organized_dir = Path(organized_dir)
     processed_dir.mkdir(parents=True, exist_ok=True)
+    organized_dir.mkdir(parents=True, exist_ok=True)
 
-    saved = 0
-    skipped = 0
+    manifest_map = _load_manifest_map(raw_dir)
 
-    # Process all HTML (including subfolders if any)
+    html_saved = 0
+    html_skipped = 0
+    pdf_saved = 0
+    pdf_skipped = 0
+    pdf_failed = 0
+
+    organized_rows: list[dict] = []
+    created_at = _utc_iso()
+
+    # HTML
     for hp in sorted(raw_dir.rglob("*.html")):
-        # Skip anything inside the pdfs directory
         if "pdfs" in hp.parts:
             continue
 
+        doc_id = hp.stem
+        rec = manifest_map.get(doc_id)
+        if rec is None:
+            logger.warning(f"missing_manifest_for_html doc_id={doc_id} path={hp}")
+
         text = parse_html_to_text(hp)
         if not text:
-            skipped += 1
-            print(f"SKIP (TOC/no-content): {hp.name}")
+            html_skipped += 1
+            logger.info(f"skip_html_empty doc_id={doc_id} path={hp.name}")
             continue
 
-        out_path = processed_dir / f"{hp.stem}.txt"
+        out_path = processed_dir / f"{doc_id}.txt"
         out_path.write_text(text, encoding="utf-8")
-        saved += 1
-        print(f"Saved text: {out_path}")
+        html_saved += 1
 
-    # Process PDFs
+        if rec is not None:
+            meta = OrganizedDoc(
+                doc_id=doc_id,
+                url=rec.url,
+                kind="html",
+                source_path=str(hp),
+                processed_path=str(out_path),
+                text_chars=len(text),
+                created_at=created_at,
+            )
+            organized_rows.append(meta.model_dump(mode="json"))
+
+        logger.info(f"saved_html doc_id={doc_id} chars={len(text)} out={out_path}")
+
+    # PDFs
     pdf_dir = raw_dir / "pdfs"
     if pdf_dir.exists():
         for pp in sorted(pdf_dir.glob("*.pdf")):
+            doc_id = pp.stem
+            rec = manifest_map.get(doc_id)
+            if rec is None:
+                logger.warning(f"missing_manifest_for_pdf doc_id={doc_id} path={pp}")
+
             try:
                 pdf_text = parse_pdf_to_text(pp)
                 if not pdf_text.strip():
-                    print(f"SKIP (no extractable text): {pp.name}")
+                    pdf_skipped += 1
+                    logger.info(f"skip_pdf_empty doc_id={doc_id} path={pp.name}")
                     continue
-                out_path = processed_dir / f"{pp.stem}.txt"
-                out_path.write_text(pdf_text, encoding="utf-8")
-                print(f"Saved PDF text: {out_path}")
-            except Exception as e:
-                print(f"FAILED PDF: {pp.name} | {e}")
 
-    print("\nPages cleaning summary")
-    print(f"  html_saved: {saved}")
-    print(f"  html_skipped: {skipped}")
+                out_path = processed_dir / f"{doc_id}.txt"
+                out_path.write_text(pdf_text, encoding="utf-8")
+                pdf_saved += 1
+
+                if rec is not None:
+                    meta = OrganizedDoc(
+                        doc_id=doc_id,
+                        url=rec.url,
+                        kind="pdf",
+                        source_path=str(pp),
+                        processed_path=str(out_path),
+                        text_chars=len(pdf_text),
+                        created_at=created_at,
+                    )
+                    organized_rows.append(meta.model_dump(mode="json"))
+
+                logger.info(f"saved_pdf doc_id={doc_id} chars={len(pdf_text)} out={out_path}")
+
+            except Exception as e:
+                pdf_failed += 1
+                logger.exception(f"failed_pdf doc_id={doc_id} path={pp.name} error={e}")
+
+    index_path = organized_dir / "docs.jsonl"
+    _write_jsonl(index_path, organized_rows)
+
+    logger.info(
+        f"stage=organize_summary html_saved={html_saved} html_skipped={html_skipped} "
+        f"pdf_saved={pdf_saved} pdf_skipped={pdf_skipped} pdf_failed={pdf_failed} index={index_path}"
+    )
+
+    return {
+        "html_saved": html_saved,
+        "html_skipped": html_skipped,
+        "pdf_saved": pdf_saved,
+        "pdf_skipped": pdf_skipped,
+        "pdf_failed": pdf_failed,
+    }
+
+
+# Backwards-compatible alias
+clean_all = organize_all
+
+__all__ = ["organize_all", "clean_all", "parse_html_to_text", "parse_pdf_to_text"]
 
 
 if __name__ == "__main__":
-    clean_all()
+    summary = organize_all()
+    logger.info(f"summary={summary}")

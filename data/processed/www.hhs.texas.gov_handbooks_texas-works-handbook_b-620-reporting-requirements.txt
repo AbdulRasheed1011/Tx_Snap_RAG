@@ -1,9 +1,13 @@
 Revision 24-3; Effective July 1, 2024
 All Programs
 During the certification period, households must report specific information based on the type of assistance and their household circumstances. Send Form H1019, Report of Change, to inform households of their reporting requirements.
+
 B-621 What to Report
+
 Revision 24-3; Effective July 1, 2024
+
 TANF
+
 Inform all certified households of their responsibility to report changes in:
 physical address;
 the source of earned and unearned income;
@@ -15,7 +19,9 @@ available cash, stocks, bonds, or money in a bank or savings account if the tota
 address, job, or other information about the absent parent;
 citizenship or immigration status; and
 circumstances other than employment that affect a person's benefit amount or employment services exemption status.
+
 SNAP
+
 Streamlined reporting (SR) minimizes the information that households must report during the certification period to maintain their benefit level and eligibility. Households are assigned an SR designation at application and redetermination. Both SR 1 and SR 2 households are subject to SR criteria. SR 3 households are not subject to SR criteria. At application and redetermination, inform all households of the changes they must report based on their SR designation. The household’s SR designation does not alter the change reporting requirements for associated medical program(s) or TANF benefits.
 Although SR households are only required to report changes based on their SR designation, staff must take appropriate action on any household reported changes and all agency-generated changes regardless of the SR designation.
 SR 1 Households
@@ -57,13 +63,19 @@ Children on TP 56 and TP 32
 Inform all households of their responsibility to report changes in available cash, stocks, bonds, or money in a bank or savings account if the total is over:
 $3,000 in households with a member who is aged or has a disability and meets relationship requirements; or
 $2,000 for all other households.
+
 TP 40
+
 Inform all households of their responsibility to report the termination of a pregnancy.
+
 TP 45
+
 Inform all households of their responsibility to report if the child no longer lives in Texas.
 Related Policy
 General Reminders, A-1510 Monitoring Questionable Management, A-1731 E&T Procedures, A-1822 ABAWD Work Requirement, A-1940 Length of Certification, A-2324 Streamlined Reporting Households, A-2350
+
 B-622 When to Report
+
 Revision 24-3; Effective July 1, 2024
 All Programs
 During the interview or application processing, households must report required changes that occurred since the application was filed.
@@ -72,7 +84,9 @@ TANF, SNAP and TP 08
 Households must report required changes that occurred between the interview and initial certification within 10 days.
 Related Policy
 Information Reported During Application Processing, B-116 What to Report, B-621
+
 B-623 How to Report
+
 Revision 24-3; Effective July 1, 2024
 All Programs
 Households can use a Form H1019 , Report of Change, or a Form H1028, Employment Verification, to report a change. Household members or someone with knowledge of the household's circumstances may report changes by:
@@ -84,7 +98,9 @@ mailing to:
 Texas Health and Human Services Commission PO Box 149024 Austin, TX 78714-9024.
 Related Policy
 Receipt of Duplicate Application, A-121.2 Receipt of Identical Application, A-121.3 Authorized Representative, A-170 Form TF0001 Required (Adequate Notice), A-2344.1
+
 B-624 Receipts for Reported Changes
+
 Revision 24-3; Effective July 1, 2024
 All Programs
 Households may request a receipt to document the change report for their records. The receipt includes the type of change and the date reported. If a household requests a receipt, send a:
