@@ -2,3 +2,5 @@
 notebook
 data
 artifacts
+__pycache__/
+*.py[cod]

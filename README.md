@@ -15,16 +15,19 @@ The system is engineered with **incremental processing, strong data contracts, a
 config.yaml
    │
    ▼
-fetch.py        # Controlled web ingestion (HTML + PDFs)
+data_main.py     # Pipeline orchestrator
    │
-   ▼
-pages.py        # Cleaning, normalization, organization
+   ├── fetch.py   # Controlled web ingestion (HTML + PDFs) -> data/raw + fetch_manifest.jsonl
    │
-   ▼
-chunk.py        # Structure-aware chunking
+   ├── pages.py   # Cleaning + organization -> data/processed + data/organized/docs.jsonl
    │
-   ▼
-chunks.jsonl    # RAG-ready corpus
+   └── chunk.py   # Chunking -> data/chunks/chunks.jsonl
+        │
+        ▼
+retrieval + generation
+   ├── retrieve.py      # Hybrid retrieval (FAISS + BM25) + rerank + confidence gating
+   ├── embed_index.py   # (Optional) Build FAISS index (requires OpenAI embeddings)
+   └── main.py          # RAG CLI: Ollama-first generation + timing (+ OpenAI fallback if configured)
 ```
 
 `data_main.py` acts solely as a **pipeline orchestrator**, coordinating stages without embedding business logic. Each stage is independently testable and idempotent.
@@ -43,9 +46,8 @@ This enables controlled system evolution without code changes.
 
 ### Incremental & Idempotent Processing
 Each pipeline stage avoids unnecessary recomputation:
-- Fetch detects unchanged content
-- Organize skips previously processed documents
-- Chunking is stable and reproducible
+- Fetch reuses existing raw artifacts by default (skip-if-present)
+- Organize/Chunking are stable and reproducible across reruns
 
 This design supports frequent re-runs and policy updates with minimal cost.
 
@@ -67,6 +69,7 @@ Logs are suitable for local debugging or centralized monitoring systems.
 ```
 Tx_Snap_RAG/
 ├── data_main.py              # Pipeline entrypoint
+├── main.py                   # RAG CLI (retrieval + answer + timing)
 ├── config.yaml               # Declarative configuration
 │
 ├── src/
@@ -80,6 +83,12 @@ Tx_Snap_RAG/
 │       ├── pages.py          # Text cleaning & organization
 │       └── chunk.py          # Chunking logic
 │
+│   └── rag/
+│       ├── embed_index.py    # Build FAISS index (OpenAI embeddings)
+│       ├── retrieve.py       # Hybrid retrieval + rerank + gating
+│       ├── query_index.py    # Retrieval debug CLI
+│       └── rag_answer.py     # RAG answer CLI (Ollama)
+│
 ├── data/
 │   ├── raw/                  # Raw HTML & PDFs
 │   ├── processed/            # Normalized text
@@ -87,6 +96,7 @@ Tx_Snap_RAG/
 │   └── chunks/               # Chunked corpus
 │
 └── artifacts/
+    ├── index/                # FAISS index + metadata
     └── logs/                 # Pipeline logs
 ```
 
@@ -139,13 +149,53 @@ Tx_Snap_RAG/
 
 ---
 
-## Running the Pipeline
+## Quickstart
+
+### 1) Run ingestion (build chunks)
 
 ```bash
-python data_main.py
+.venv/bin/python data_main.py
 ```
 
-The pipeline executes fetch, clean, and chunk stages sequentially and emits structured logs for each stage.
+This produces:
+- `data/raw/fetch_manifest.jsonl`
+- `data/organized/docs.jsonl`
+- `data/chunks/chunks.jsonl`
+
+### 2) (Optional) Build FAISS index (requires OpenAI embeddings)
+
+```bash
+export OPENAI_API_KEY="..."   # required for embeddings
+.venv/bin/python -m src.rag.embed_index
+```
+
+Outputs:
+- `artifacts/index/index.faiss`
+- `artifacts/index/meta.jsonl`
+
+### 3) Run retrieval debug CLI
+
+```bash
+.venv/bin/python -m src.rag.query_index
+```
+
+### 4) Run end-to-end RAG CLI (Ollama-first)
+
+Start Ollama:
+```bash
+ollama serve
+ollama pull llama3.1
+```
+
+Then run:
+```bash
+.venv/bin/python main.py
+```
+
+Environment variables:
+- `OLLAMA_MODEL` (default: `llama3.1`)
+- `OLLAMA_URL` (default: `http://localhost:11434/api/generate`)
+- `OPENAI_API_KEY` (optional fallback for generation; also enables dense retrieval)
 
 ---
 
@@ -156,13 +206,14 @@ The pipeline executes fetch, clean, and chunk stages sequentially and emits stru
 - Clean text normalization
 - Production-grade chunking
 - Structured logging and schema validation
+- BM25 retrieval (no API keys required)
+- Hybrid retrieval (FAISS + BM25) with reranking + confidence gating (when FAISS index + OpenAI embeddings are available)
+- Ollama-first grounded answer generation with citations (OpenAI optional fallback)
 
 ---
 
 ## Planned Extensions
 
-- Embedding generation (OpenAI or equivalent)
-- Vector indexing (FAISS / hybrid retrieval)
 - FastAPI inference service
 - Retrieval and grounding evaluation
 - Monitoring and drift detection
