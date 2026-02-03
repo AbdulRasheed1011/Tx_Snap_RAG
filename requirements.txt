@@ -24,6 +24,7 @@ rank-bm25>=0.2.2
 langchain>=0.1.0
 langchain-core>=0.1.0
 langchain-community>=0.1.0
+langchain-ollama>=0.2.0
 
 # API serving + monitoring
 fastapi>=0.110.0

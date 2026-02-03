@@ -25,9 +25,10 @@ data_main.py     # Pipeline orchestrator
         │
         ▼
 retrieval + generation
-   ├── retrieve.py      # Hybrid retrieval (FAISS + BM25) + rerank + confidence gating
+   ├── langchain_rag.py # LangChain BM25 + optional FAISS hybrid + Ollama generation
+   ├── retrieve.py      # Legacy hybrid retrieval (FAISS + BM25) + rerank + confidence gating
    ├── embed_index.py   # (Optional) Build FAISS index (requires OpenAI embeddings)
-   └── main.py          # RAG CLI: Ollama-first generation + timing (+ OpenAI fallback if configured)
+   └── main.py          # RAG CLI (LangChain + Ollama) + timing
 ```
 
 `data_main.py` acts solely as a **pipeline orchestrator**, coordinating stages without embedding business logic. Each stage is independently testable and idempotent.
@@ -99,6 +100,7 @@ Tx_Snap_RAG/
 │   │   └── pages.py
 │   └── rag/
 │       ├── embed_index.py
+│       ├── langchain_rag.py
 │       ├── query_index.py
 │       ├── rag_answer.py
 │       └── retrieve.py
@@ -172,7 +174,7 @@ This produces:
 - `data/organized/docs.jsonl`
 - `data/chunks/chunks.jsonl`
 
-### 2) (Optional) Build FAISS index (requires OpenAI embeddings)
+### 2) (Optional) Build FAISS index (legacy retriever path, requires OpenAI embeddings)
 
 ```bash
 export OPENAI_API_KEY="..."   # required for embeddings
@@ -189,7 +191,7 @@ Outputs:
 .venv/bin/python -m src.rag.query_index
 ```
 
-### 4) Run end-to-end RAG CLI (Ollama-first)
+### 4) Run end-to-end RAG CLI (LangChain + Ollama)
 
 Start Ollama:
 ```bash
@@ -205,7 +207,12 @@ Then run:
 Environment variables:
 - `OLLAMA_MODEL` (default: `llama3.1`)
 - `OLLAMA_URL` (default: `http://localhost:11434/api/generate`)
-- `OPENAI_API_KEY` (optional fallback for generation; also enables dense retrieval)
+- `OPENAI_API_KEY` (optional; enables LangChain FAISS hybrid when index artifacts exist)
+- `RAG_DISABLE_GENERATION` (optional, set `true` for retrieval-only debugging)
+
+Retrieval mode behavior:
+- `retrieval.hybrid: true` + `OPENAI_API_KEY` + FAISS artifacts (`artifacts/index/*`) => `langchain_hybrid`
+- otherwise => `langchain_bm25` (automatic safe fallback)
 
 ---
 
