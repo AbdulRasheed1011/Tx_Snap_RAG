@@ -1,0 +1,17 @@
+.git
+.venv
+__pycache__/
+*.py[cod]
+notebook
+eval
+
+# Keep image small: only include chunks (and optionally index).
+data/*
+!data/chunks/
+!data/chunks/chunks.jsonl
+
+artifacts/*
+!artifacts/index/
+!artifacts/index/index.faiss
+!artifacts/index/meta.jsonl
+

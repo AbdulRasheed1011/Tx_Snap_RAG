@@ -264,9 +264,35 @@ def _load_manifest_map(raw_dir: Path) -> Dict[str, FetchRecord]:
     return out
 
 
+def _infer_url_from_doc_id(doc_id: str) -> str | None:
+    """Best-effort URL reconstruction for legacy/uncrawled docs without a manifest record.
+
+    Many stored raw filenames follow: "<domain>_<path with underscores>.html".
+    Example:
+      doc_id="www.hhs.texas.gov_services_food_snap-food-benefits"
+      -> https://www.hhs.texas.gov/services/food/snap-food-benefits
+    """
+
+    s = doc_id.strip()
+    if not s:
+        return None
+    if s.startswith(("http://", "https://")):
+        return s
+
+    if "_" not in s:
+        return None
+
+    domain, rest = s.split("_", 1)
+    if "." not in domain:
+        return None
+
+    path = rest.replace("_", "/").lstrip("/")
+    return f"https://{domain}/{path}" if path else f"https://{domain}"
+
+
 def _fallback_url(doc_id: str) -> str:
     # Keep OrganizedDoc validation happy when old raw files have no manifest row.
-    return f"https://example.com/unknown/{doc_id}"
+    return _infer_url_from_doc_id(doc_id) or f"https://example.com/unknown/{doc_id}"
 
 
 def _make_organized_doc(

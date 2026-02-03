@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      # When running Ollama on the host machine, Docker can reach it via host.docker.internal on macOS.
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+      RAG_CONFIG_PATH: ${RAG_CONFIG_PATH:-/app/config.yaml}
+      RAG_CHUNKS_PATH: ${RAG_CHUNKS_PATH:-/app/data/chunks/chunks.jsonl}
+      RAG_INDEX_PATH: ${RAG_INDEX_PATH:-/app/artifacts/index/index.faiss}
+      RAG_META_PATH: ${RAG_META_PATH:-/app/artifacts/index/meta.jsonl}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Set to true for smoke tests without Ollama:
+      # RAG_DISABLE_GENERATION: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../data:/app/data
+      - ../artifacts:/app/artifacts
+

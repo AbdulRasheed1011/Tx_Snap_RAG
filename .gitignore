@@ -4,3 +4,10 @@ data
 artifacts
 __pycache__/
 *.py[cod]
+
+# Terraform local state and downloaded providers
+.terraform/
+infra/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log

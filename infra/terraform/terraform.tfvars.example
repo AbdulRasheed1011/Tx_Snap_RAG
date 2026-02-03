@@ -1,0 +1,15 @@
+aws_region       = "us-east-1"
+hosted_zone_name = "neweraon.com"
+hosted_zone_id   = "Z1234567890ABC"
+api_subdomain    = "api"
+
+# Prefer explicit network IDs to avoid read/list IAM permissions.
+vpc_id = "vpc-0123456789abcdef0"
+subnet_ids = [
+  "subnet-0123456789abcdef0",
+  "subnet-abcdef01234567890",
+]
+
+image_tag     = "latest"
+desired_count = 1
+ollama_model  = "llama3.1"

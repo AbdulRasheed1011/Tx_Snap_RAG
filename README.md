@@ -68,36 +68,46 @@ Logs are suitable for local debugging or centralized monitoring systems.
 
 ```
 Tx_Snap_RAG/
-├── data_main.py              # Pipeline entrypoint
+├── config.yaml               # Declarative config
+├── data_main.py              # Ingestion pipeline entrypoint
 ├── main.py                   # RAG CLI (retrieval + answer + timing)
-├── config.yaml               # Declarative configuration
-│
+├── README.md
+├── requirements.txt
+├── requirements-dev.txt
+├── docker/
+│   ├── Dockerfile            # FastAPI image
+│   └── compose.yaml          # Local container run
+├── infra/
+│   └── terraform/            # AWS ECS + ALB + Route53 + ACM
+├── scripts/
+│   ├── run_api.sh            # Local FastAPI run helper
+│   └── aws_public_deploy.sh  # One-command AWS deploy helper
 ├── src/
+│   ├── api/
+│   │   ├── main.py           # FastAPI app
+│   │   ├── metrics.py        # Prometheus metrics
+│   │   ├── models.py         # Request/response schemas
+│   │   ├── ollama_client.py  # Ollama HTTP client
+│   │   └── settings.py       # API settings
 │   ├── core/
-│   │   ├── logging.py        # Centralized logging
-│   │   ├── settings.py       # Config loading & validation
-│   │   └── context.py        # run_id generation
-│   │
-│   └── ingest/
-│       ├── fetch.py          # Web & PDF ingestion
-│       ├── pages.py          # Text cleaning & organization
-│       └── chunk.py          # Chunking logic
-│
+│   │   ├── context.py
+│   │   ├── logging.py
+│   │   └── settings.py
+│   ├── ingest/
+│   │   ├── chunk.py
+│   │   ├── fetch.py
+│   │   └── pages.py
 │   └── rag/
-│       ├── embed_index.py    # Build FAISS index (OpenAI embeddings)
-│       ├── retrieve.py       # Hybrid retrieval + rerank + gating
-│       ├── query_index.py    # Retrieval debug CLI
-│       └── rag_answer.py     # RAG answer CLI (Ollama)
-│
-├── data/
-│   ├── raw/                  # Raw HTML & PDFs
-│   ├── processed/            # Normalized text
-│   ├── organized/            # Document index (docs.jsonl)
-│   └── chunks/               # Chunked corpus
-│
-└── artifacts/
-    ├── index/                # FAISS index + metadata
-    └── logs/                 # Pipeline logs
+│       ├── embed_index.py
+│       ├── query_index.py
+│       ├── rag_answer.py
+│       └── retrieve.py
+├── tests/
+│   └── test_api.py
+├── docs/
+│   └── PROBLEM_SUCCESS_SPEC.md
+├── data/                     # generated artifacts
+└── artifacts/                # generated artifacts
 ```
 
 ---
@@ -199,6 +209,183 @@ Environment variables:
 
 ---
 
+## Deploy (FastAPI + Docker)
+
+### Local API (no Docker)
+
+```bash
+.venv/bin/python data_main.py
+./scripts/run_api.sh
+```
+
+API endpoints:
+- `GET /healthz`
+- `GET /readyz`
+- `GET /metrics` (Prometheus)
+- `POST /answer` (RAG)
+
+Example request:
+```bash
+curl -sS -X POST http://localhost:8000/answer \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"What is SNAP?"}' | python -m json.tool
+```
+
+### Docker
+
+Assumption: Ollama runs on your host machine (macOS). The container reaches it via `host.docker.internal`.
+
+```bash
+docker compose -f docker/compose.yaml up --build
+```
+
+Smoke-test (without Ollama) by disabling generation:
+```bash
+RAG_DISABLE_GENERATION=true docker compose -f docker/compose.yaml up --build
+```
+
+---
+
+## Deploy on AWS (Public API)
+
+This repo includes an ECS Fargate deployment behind an ALB (HTTPS) using Terraform + ACM + Route53.
+
+What you get:
+- Public API endpoint via custom domain + TLS certificate
+- Ollama runs as a sidecar container in the same ECS task
+- Prometheus metrics endpoint (`/metrics`)
+- API key auth via `X-API-Key` header (required)
+- Startup safety: API readiness only turns green when the configured Ollama model is available
+
+### Prereqs
+- AWS account + credentials configured locally (`aws configure`)
+- Terraform installed (>= 1.5)
+- Docker running (Colima or Docker Desktop)
+- Route53 hosted zone ID, VPC ID, and at least two subnet IDs in your target region
+
+---
+
+### Fastest path (recommended): one command deploy script
+
+```bash
+./scripts/aws_public_deploy.sh \
+  --aws-region us-east-1 \
+  --hosted-zone-name neweraon.com \
+  --hosted-zone-id Z1234567890ABC \
+  --api-subdomain api \
+  --vpc-id vpc-0123456789abcdef0 \
+  --subnet-ids subnet-aaa111,subnet-bbb222 \
+  --image-tag latest \
+  --desired-count 1 \
+  --api-key-value 'REPLACE_WITH_STRONG_KEY'
+```
+
+What this script does:
+1. Creates base AWS infra with service scaled to zero (no broken image pull).
+2. Pushes your FastAPI image to ECR.
+3. Scales ECS service up with HTTPS endpoint enabled.
+4. Prints your public API URL and test commands.
+
+---
+
+### Manual path (Terraform + Docker)
+
+#### 1) Create AWS resources (bootstrap)
+
+```bash
+cd infra/terraform
+terraform init
+
+terraform apply \
+  -var 'aws_region=us-east-1' \
+  -var 'hosted_zone_name=neweraon.com' \
+  -var 'hosted_zone_id=Z1234567890ABC' \
+  -var 'api_subdomain=api' \
+  -var 'vpc_id=vpc-0123456789abcdef0' \
+  -var 'subnet_ids=["subnet-aaa111","subnet-bbb222"]' \
+  -var 'image_tag=bootstrap' \
+  -var 'desired_count=0'
+```
+
+Terraform outputs:
+- `ecr_repository_url`
+- `alb_dns_name`
+- `api_base_url`
+- `api_key_secret_arn`
+
+Set the API key (stored in Secrets Manager; not in Terraform state):
+```bash
+AWS_REGION=us-east-1
+SECRET_ARN="$(cd infra/terraform && terraform output -raw api_key_secret_arn)"
+
+aws secretsmanager put-secret-value \
+  --region "$AWS_REGION" \
+  --secret-id "$SECRET_ARN" \
+  --secret-string "REPLACE_WITH_STRONG_KEY"
+```
+
+#### 2) Build & push the API image to ECR
+
+```bash
+AWS_REGION=us-east-1
+ECR_REPO_URL="$(cd infra/terraform && terraform output -raw ecr_repository_url)"
+
+aws ecr get-login-password --region "$AWS_REGION" \
+  | docker login --username AWS --password-stdin "${ECR_REPO_URL%/*}"
+
+docker build -f docker/Dockerfile -t "$ECR_REPO_URL:latest" .
+docker push "$ECR_REPO_URL:latest"
+```
+
+#### 3) Re-apply Terraform (turn service on)
+
+```bash
+cd infra/terraform
+terraform apply \
+  -var 'aws_region=us-east-1' \
+  -var 'hosted_zone_name=neweraon.com' \
+  -var 'hosted_zone_id=Z1234567890ABC' \
+  -var 'api_subdomain=api' \
+  -var 'vpc_id=vpc-0123456789abcdef0' \
+  -var 'subnet_ids=["subnet-aaa111","subnet-bbb222"]' \
+  -var 'desired_count=1' \
+  -var 'image_tag=latest'
+```
+
+#### 4) Call the public API
+
+```bash
+API_URL="$(cd infra/terraform && terraform output -raw api_base_url)"
+curl -sS -X POST "$API_URL/answer" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: REPLACE_WITH_STRONG_KEY" \
+  -d '{"question":"What is SNAP?"}' | python -m json.tool
+```
+
+Note: first startup can take longer while Ollama downloads the model. `/readyz` reports model status.
+
+---
+
+### Troubleshooting
+
+1) `bash: aws/terraform/docker: command not found`
+- Install missing tools and restart your shell.
+- Verify with: `command -v aws terraform docker`
+
+2) `bash: gsed: command not found`
+- You likely have an alias/function in shell startup files.
+- Check with: `type terraform` and `type aws`
+- Temporary bypass: run commands with `command terraform ...` and `command aws ...`
+
+3) Terraform `No valid credential sources found`
+- Run `aws configure` and verify with `aws sts get-caller-identity`
+
+4) IAM `UnauthorizedOperation` for `DescribeVpcs` or `ListHostedZones`
+- Use explicit IDs (`hosted_zone_id`, `vpc_id`, `subnet_ids`) as shown above.
+- If still blocked, ask your AWS admin for missing IAM permissions.
+
+---
+
 ## Current Capabilities
 
 - HTML and PDF ingestion
@@ -214,7 +401,6 @@ Environment variables:
 
 ## Planned Extensions
 
-- FastAPI inference service
 - Retrieval and grounding evaluation
 - Monitoring and drift detection
 
