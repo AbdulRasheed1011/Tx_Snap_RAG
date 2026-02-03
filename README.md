@@ -1,116 +1,107 @@
-# Tx_Snap_RAG  
-**Production-Grade Retrieval-Augmented Generation (RAG) System for Texas SNAP (HHSC)**
+# Tx_Snap_RAG
+**Retrieval-Augmented Generation (RAG) System for Texas SNAP (HHSC)**
 
 ## Overview
 
-Tx_Snap_RAG is an end-to-end, production-oriented Retrieval-Augmented Generation (RAG) system built to ingest, process, and retrieve authoritative Texas SNAP (HHSC) policy and guidance content from public government websites.
+Tx_Snap_RAG is a production-oriented Retrieval-Augmented Generation (RAG) pipeline designed to ingest, normalize, and prepare authoritative Texas SNAP (HHSC) policy content for reliable downstream retrieval and LLM-based question answering.
 
-The system is designed with a **data-first and incremental pipeline philosophy**, ensuring that changes in policy content are detected, processed, and reflected in downstream retrieval without reprocessing unchanged data.
+The system is engineered with **incremental processing, strong data contracts, and operational observability**
 
+---
 
-## High-Level Architecture
+## System Architecture
 
+```
 config.yaml
-│
-▼
-fetch.py        →  Web ingestion (HTML + PDFs, incremental)
-│
-▼
-pages.py        →  Clean, normalize, and organize text
-│
-▼
-chunk.py        →  Structure-aware chunking for retrieval
-│
-▼
-(chunks.jsonl)  →  Ready for embeddings & vector indexing
+   │
+   ▼
+fetch.py        # Controlled web ingestion (HTML + PDFs)
+   │
+   ▼
+pages.py        # Cleaning, normalization, organization
+   │
+   ▼
+chunk.py        # Structure-aware chunking
+   │
+   ▼
+chunks.jsonl    # RAG-ready corpus
+```
 
-`data_main.py` acts strictly as a **pipeline orchestrator**, calling each stage in sequence.  
-All business logic lives inside individual pipeline modules.
+`data_main.py` acts solely as a **pipeline orchestrator**, coordinating stages without embedding business logic. Each stage is independently testable and idempotent.
 
 ---
 
-## Design Principles
+## Engineering Principles
 
-### Configuration-Driven
-All system behavior is defined in `config.yaml`, including:
+### Configuration-First Design
+All runtime behavior is driven via `config.yaml`, including:
 - crawl scope and safety rules
-- chunking parameters
-- embedding configuration
-- retrieval and generation constraints
+- chunk sizing and overlap
+- downstream embedding and retrieval parameters
 
-This allows system behavior to change without modifying code.
+This enables controlled system evolution without code changes.
 
----
+### Incremental & Idempotent Processing
+Each pipeline stage avoids unnecessary recomputation:
+- Fetch detects unchanged content
+- Organize skips previously processed documents
+- Chunking is stable and reproducible
 
-### Incremental & Idempotent Pipelines
-Each stage avoids unnecessary recomputation:
-- Fetch skips unchanged pages using HTTP metadata and hashes
-- Organize skips already-processed documents
-- Chunking only re-chunks documents whose text changed
+This design supports frequent re-runs and policy updates with minimal cost.
 
-This enables fast re-runs, lower cost, and safe continuous updates.
+### Explicit Data Contracts
+Inter-stage boundaries are enforced using Pydantic models (e.g., `OrganizedDoc`, `ChunkRecord`), preventing silent schema drift and ensuring downstream correctness.
 
----
-
-### Strong Data Contracts
-Pydantic models define explicit schemas at each stage:
-- `FetchRecord`
-- `OrganizedDoc`
-- `ChunkRecord`
-
-This prevents silent data corruption and enforces predictable downstream behavior.
-
----
-
-### Observability First
-Every pipeline stage emits structured logs:
-- stage start / completion
+### Observability by Default
+All stages emit structured logs capturing:
+- stage lifecycle events
 - processed vs skipped counts
-- warnings for malformed or missing data
+- malformed or missing data warnings
 
-Logs are suitable for local debugging or cloud-based monitoring systems.
+Logs are suitable for local debugging or centralized monitoring systems.
 
 ---
 
-## Repository Structure
+## Repository Layout
+
+```
 Tx_Snap_RAG/
-├── data_main.py              # Pipeline orchestrator
-├── config.yaml               # System configuration
+├── data_main.py              # Pipeline entrypoint
+├── config.yaml               # Declarative configuration
 │
 ├── src/
 │   ├── core/
 │   │   ├── logging.py        # Centralized logging
-│   │   ├── settings.py       # YAML → Pydantic config loader
+│   │   ├── settings.py       # Config loading & validation
 │   │   └── context.py        # run_id generation
 │   │
 │   └── ingest/
 │       ├── fetch.py          # Web & PDF ingestion
-│       ├── pages.py          # Cleaning & organization
+│       ├── pages.py          # Text cleaning & organization
 │       └── chunk.py          # Chunking logic
 │
 ├── data/
 │   ├── raw/                  # Raw HTML & PDFs
-│   ├── processed/            # Cleaned text files
-│   ├── organized/            # docs.jsonl metadata index
-│   └── chunks/               # chunks.jsonl for RAG
+│   ├── processed/            # Normalized text
+│   ├── organized/            # Document index (docs.jsonl)
+│   └── chunks/               # Chunked corpus
 │
 └── artifacts/
-└── logs/                 # Pipeline logs
+    └── logs/                 # Pipeline logs
+```
 
 ---
 
 ## Pipeline Stages
 
-### 1. Fetch (Web Ingestion)
+### 1. Fetch — Web Ingestion
+**Objective:** Reliably ingest authoritative SNAP policy content while minimizing unnecessary downloads.
 
-**Purpose:**  
-Ingest authoritative SNAP policy content while avoiding unnecessary downloads.
-
-**Key Features:**
-- Domain and path allow/deny rules
-- Incremental updates using HTTP metadata
-- HTML and PDF handling
-- Append-only fetch manifest for auditability
+**Key Capabilities:**
+- domain and path allow/deny rules
+- incremental fetch logic
+- HTML and PDF support
+- append-only ingestion manifest
 
 **Outputs:**
 - `data/raw/*.html`
@@ -119,55 +110,65 @@ Ingest authoritative SNAP policy content while avoiding unnecessary downloads.
 
 ---
 
-### 2. Pages (Clean & Organize)
-
-**Purpose:**  
-Convert raw web artifacts into clean, model-ready text while preserving provenance.
+### 2. Pages — Clean & Organize
+**Objective:** Convert raw web artifacts into clean, model-consumable text while preserving provenance.
 
 **Processing Includes:**
-- Removal of navigation, headers, footers, and boilerplate
-- Extraction of meaningful policy content
-- Table-of-contents and empty page filtering
+- boilerplate and navigation removal
+- content normalization
 - PDF text extraction
+- document-level metadata indexing
 
 **Outputs:**
 - `data/processed/<doc_id>.txt`
 - `data/organized/docs.jsonl`
 
-Each organized record contains:
-- document ID
-- source URL
-- document type (HTML / PDF)
-- character counts
-- file paths
-
 ---
 
-### 3. Chunking (Retrieval Preparation)
-
-**Purpose:**  
-Prepare text chunks optimized for semantic retrieval.
+### 3. Chunk — Retrieval Preparation
+**Objective:** Prepare semantically coherent text chunks optimized for vector retrieval.
 
 **Chunking Strategy:**
-- Paragraph-first chunking
-- Sentence-based fallback for long sections
-- Overlapping chunks to prevent boundary loss
-- Stable, hash-based chunk IDs
+- paragraph-first segmentation
+- sentence-based fallback for long sections
+- overlapping windows to avoid boundary loss
+- stable, hash-based chunk identifiers
 
 **Outputs:**
 - `data/chunks/chunks.jsonl`
-
-Each chunk includes:
-- `chunk_id`
-- `doc_id` and source URL
-- character offsets
-- token estimates
 
 ---
 
 ## Running the Pipeline
 
-Activate your virtual environment and run:
-
 ```bash
 python data_main.py
+```
+
+The pipeline executes fetch, clean, and chunk stages sequentially and emits structured logs for each stage.
+
+---
+
+## Current Capabilities
+
+- HTML and PDF ingestion
+- Incremental, reproducible pipelines
+- Clean text normalization
+- Production-grade chunking
+- Structured logging and schema validation
+
+---
+
+## Planned Extensions
+
+- Embedding generation (OpenAI or equivalent)
+- Vector indexing (FAISS / hybrid retrieval)
+- FastAPI inference service
+- Retrieval and grounding evaluation
+- Monitoring and drift detection
+
+---
+
+## Intent
+
+This repository demonstrates how to design and maintain **RAG systems with production discipline**, emphasizing data quality, reproducibility, and operational reliability over one-off experimentation.
